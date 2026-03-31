@@ -1474,6 +1474,22 @@ export function LandingPage() {
         </LandingSection>
       </main>
 
+      <footer className="border-t border-[var(--border-subtle)]">
+        <div className="mx-auto flex max-w-[1240px] flex-col gap-3 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+          <p className="type-body-text text-[13px]">
+            Orvelle helps service businesses identify missed revenue from inbound calls and turn it into action.
+          </p>
+          <div className="flex items-center gap-4 text-[14px]">
+            <Link href="/privacy" className="font-medium text-[var(--text-secondary)] no-underline transition hover:text-[var(--text-primary)]">
+              Privacy Policy
+            </Link>
+            <Link href="/terms" className="font-medium text-[var(--text-secondary)] no-underline transition hover:text-[var(--text-primary)]">
+              Terms of Service
+            </Link>
+          </div>
+        </div>
+      </footer>
+
       <RequestDemoModal isOpen={isDemoModalOpen} onClose={() => setIsDemoModalOpen(false)} />
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 type RequestDemoModalProps = {
@@ -338,6 +339,17 @@ export function RequestDemoModal({ isOpen, onClose }: RequestDemoModalProps) {
                 </button>
                 <p className="type-body-text mt-3 text-center text-[13px]">
                   We&apos;ll review your request and respond within 24 hours.
+                </p>
+                <p className="type-body-text mt-2 text-center text-[12px] leading-6">
+                  By submitting this form, you agree to our{" "}
+                  <Link href="/privacy" className="font-medium text-[var(--accent)] no-underline hover:underline">
+                    Privacy Policy
+                  </Link>{" "}
+                  and{" "}
+                  <Link href="/terms" className="font-medium text-[var(--accent)] no-underline hover:underline">
+                    Terms of Service
+                  </Link>
+                  .
                 </p>
               </div>
             </form>
