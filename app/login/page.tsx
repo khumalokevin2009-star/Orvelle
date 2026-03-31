@@ -1,0 +1,97 @@
+"use client";
+
+import { FormEvent, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { LogoIcon } from "@/components/icons";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [email, setEmail] = useState("analyst@revenueops.io");
+  const [password, setPassword] = useState("password");
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    startTransition(() => {
+      router.push("/dashboard");
+    });
+  }
+
+  return (
+    <main className="min-h-screen bg-[#F3F4F6] px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-[1180px] items-center justify-center">
+        <section className="surface-primary w-full max-w-[480px] px-8 py-9 shadow-[0_18px_55px_rgba(17,24,39,0.08)] sm:px-10 sm:py-11">
+          <div className="surface-secondary inline-flex h-14 w-14 items-center justify-center">
+            <LogoIcon className="h-10 w-10" />
+          </div>
+
+          <div className="mt-7">
+            <div className="type-label-text text-[12px]">
+              Revenue Operations Platform
+            </div>
+            <h1 className="type-page-title text-[32px]">Access Platform</h1>
+            <p className="type-body-text mt-3 text-[15px]">
+              Sign in to review flagged interactions and revenue leakage across call activity.
+            </p>
+          </div>
+
+          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+            <label className="block">
+              <span className="type-label-text text-[13px]">Email</span>
+              <input
+                type="email"
+                name="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="analyst@revenueops.io"
+                required
+                className="mt-2 h-12 w-full rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-[15px] text-[#111827] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]"
+                autoComplete="email"
+              />
+            </label>
+
+            <label className="block">
+              <div className="flex items-center justify-between gap-4">
+                <span className="type-label-text text-[13px]">Password</span>
+                <a
+                  href="mailto:access@revenueops.io?subject=Password%20Reset%20Request"
+                  className="text-[13px] font-medium text-[#6B7280] transition hover:text-[#111827] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                >
+                  Forgot password
+                </a>
+              </div>
+              <input
+                type="password"
+                name="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Enter your password"
+                required
+                className="mt-2 h-12 w-full rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-[15px] text-[#111827] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]"
+                autoComplete="current-password"
+              />
+            </label>
+
+            <button
+              type="submit"
+              disabled={isPending}
+              className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[15px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
+            >
+              {isPending ? "Signing In..." : "Sign In"}
+            </button>
+          </form>
+
+          <div className="surface-secondary mt-6 px-4 py-4">
+            <div className="type-label-text text-[13px]">
+              Security Notice
+            </div>
+            <p className="type-body-text mt-2 text-[14px]">
+              Access is restricted to authorized revenue operations and service leadership personnel.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
