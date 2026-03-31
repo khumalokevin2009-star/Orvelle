@@ -1,16 +1,47 @@
-import type { SVGProps } from "react";
+import { useId, type SVGProps } from "react";
 
 type IconProps = SVGProps<SVGSVGElement>;
 
 export function LogoIcon(props: IconProps) {
+  const id = useId();
+  const baseGradientId = `${id}-base`;
+  const topGradientId = `${id}-top`;
+  const silverGradientId = `${id}-silver`;
+
   return (
-    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" {...props}>
+    <svg viewBox="0 0 64 64" fill="none" aria-hidden="true" {...props}>
+      <defs>
+        <linearGradient id={baseGradientId} x1="11" y1="55" x2="56" y2="9" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#0A0F6A" />
+          <stop offset="0.52" stopColor="#1438C4" />
+          <stop offset="1" stopColor="#0F68E8" />
+        </linearGradient>
+        <linearGradient id={topGradientId} x1="16" y1="28" x2="48" y2="6" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#0F68E8" />
+          <stop offset="0.42" stopColor="#1692F5" />
+          <stop offset="1" stopColor="#2FD1FF" />
+        </linearGradient>
+        <linearGradient id={silverGradientId} x1="28" y1="60" x2="55" y2="37" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#F8FAFC" />
+          <stop offset="0.48" stopColor="#EEF2F7" />
+          <stop offset="1" stopColor="#D9E2F1" />
+        </linearGradient>
+      </defs>
       <path
-        d="M16 5.333c-4.97 0-9 3.95-9 8.822 0 2.58 1.13 5.125 3.1 6.98l4.87 4.586a1.5 1.5 0 0 0 2.06 0l4.87-4.586c1.97-1.855 3.1-4.4 3.1-6.98 0-4.871-4.03-8.822-9-8.822Z"
-        fill="#2D8CFF"
+        d="M23.2 7.2h17.6a6 6 0 0 1 4.24 1.76l10.2 10.2A6 6 0 0 1 57 23.4v17.2a6 6 0 0 1-1.76 4.24l-10.2 10.2A6 6 0 0 1 40.8 56.8H23.2A6 6 0 0 1 18.96 55l-10.2-10.2A6 6 0 0 1 7 40.6V23.4a6 6 0 0 1 1.76-4.24l10.2-10.2A6 6 0 0 1 23.2 7.2Zm5.2 12a5.8 5.8 0 0 0-5.8 5.8v14a5.8 5.8 0 0 0 5.8 5.8h7.2a5.8 5.8 0 0 0 5.8-5.8V25a5.8 5.8 0 0 0-5.8-5.8h-7.2Z"
+        fill={`url(#${baseGradientId})`}
+        fillRule="evenodd"
+        clipRule="evenodd"
       />
-      <circle cx="22.8" cy="7.9" r="5.2" fill="#4AA3FF" />
-      <path d="M22.8 5.3v4.5M25.05 7.55h-4.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" />
+      <path
+        d="M11.8 21.7 25.3 8.2a5.5 5.5 0 0 1 3.9-1.6h27.1L45.8 18.7H31.3a8.7 8.7 0 0 0-6.2 2.56L19.8 26.5 11.8 21.7Z"
+        fill={`url(#${topGradientId})`}
+      />
+      <path d="m8.8 24.6 2.68-2.68 15.4 15.4-2.68 2.68z" fill="#FFFFFF" />
+      <path
+        d="m21.8 57.4 12.1-12.1a6.9 6.9 0 0 1 4.9-2.03h6.5a8.6 8.6 0 0 0 6.12-2.54l8.06 8.06-9.1 9.1a6.9 6.9 0 0 1-4.88 2.02H21.8Z"
+        fill={`url(#${silverGradientId})`}
+      />
     </svg>
   );
 }

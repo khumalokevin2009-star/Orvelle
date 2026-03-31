@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { BoltIcon, LogoIcon, MoonIcon, SearchFlagIcon, StatsIcon, SunIcon, UploadIcon } from "@/components/icons";
+import { BoltIcon, MoonIcon, SearchFlagIcon, StatsIcon, SunIcon, UploadIcon } from "@/components/icons";
+import { OrvelleBrandIcon, OrvelleWordmark } from "@/components/orvelle-brand";
 import { RequestDemoModal } from "@/components/request-demo-modal";
 const SCREENSHOT_SRC = "/landing/dashboard-preview-final.png?v=20260331-premium-v5";
 
@@ -1053,13 +1054,10 @@ export function LandingPage() {
       <header className="sticky top-0 z-40 border-b border-[var(--border-subtle)] bg-[var(--landing-nav)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1240px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-3 text-[var(--text-primary)] no-underline">
-            <span className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-[var(--border-subtle)] bg-[var(--surface-primary)]">
-              <LogoIcon className="h-7 w-7" />
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-[var(--border-subtle)] bg-[var(--surface-primary)] shadow-[var(--landing-panel-shadow)]">
+              <OrvelleBrandIcon size={28} priority />
             </span>
-            <div>
-              <div className="type-section-title text-[16px]">Revenue Recovery OS</div>
-              <div className="type-body-text text-[12px]">Call revenue recovery platform</div>
-            </div>
+            <OrvelleWordmark theme={theme} priority />
           </Link>
 
           <div className="flex items-center gap-3">

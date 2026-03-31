@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="orvelle-base" x1="11" y1="55" x2="56" y2="9" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A0F6A" />
+      <stop offset="0.52" stop-color="#1438C4" />
+      <stop offset="1" stop-color="#0F68E8" />
+    </linearGradient>
+    <linearGradient id="orvelle-top" x1="16" y1="28" x2="48" y2="6" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F68E8" />
+      <stop offset="0.42" stop-color="#1692F5" />
+      <stop offset="1" stop-color="#2FD1FF" />
+    </linearGradient>
+    <linearGradient id="orvelle-silver" x1="28" y1="60" x2="55" y2="37" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC" />
+      <stop offset="0.48" stop-color="#EEF2F7" />
+      <stop offset="1" stop-color="#D9E2F1" />
+    </linearGradient>
+  </defs>
+  <path
+    d="M23.2 7.2h17.6a6 6 0 0 1 4.24 1.76l10.2 10.2A6 6 0 0 1 57 23.4v17.2a6 6 0 0 1-1.76 4.24l-10.2 10.2A6 6 0 0 1 40.8 56.8H23.2A6 6 0 0 1 18.96 55l-10.2-10.2A6 6 0 0 1 7 40.6V23.4a6 6 0 0 1 1.76-4.24l10.2-10.2A6 6 0 0 1 23.2 7.2Zm5.2 12a5.8 5.8 0 0 0-5.8 5.8v14a5.8 5.8 0 0 0 5.8 5.8h7.2a5.8 5.8 0 0 0 5.8-5.8V25a5.8 5.8 0 0 0-5.8-5.8h-7.2Z"
+    fill="url(#orvelle-base)"
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+  />
+  <path d="M11.8 21.7 25.3 8.2a5.5 5.5 0 0 1 3.9-1.6h27.1L45.8 18.7H31.3a8.7 8.7 0 0 0-6.2 2.56L19.8 26.5 11.8 21.7Z" fill="url(#orvelle-top)" />
+  <path d="m8.8 24.6 2.68-2.68 15.4 15.4-2.68 2.68z" fill="#FFFFFF" />
+  <path
+    d="m21.8 57.4 12.1-12.1a6.9 6.9 0 0 1 4.9-2.03h6.5a8.6 8.6 0 0 0 6.12-2.54l8.06 8.06-9.1 9.1a6.9 6.9 0 0 1-4.88 2.02H21.8Z"
+    fill="url(#orvelle-silver)"
+  />
+</svg>

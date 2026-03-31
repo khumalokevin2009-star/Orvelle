@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
-import { BoltIcon, DashboardIcon, LogoIcon, SettingsIcon, UploadIcon } from "@/components/icons";
+import { BoltIcon, DashboardIcon, SettingsIcon, UploadIcon } from "@/components/icons";
+import { OrvelleBrandIcon } from "@/components/orvelle-brand";
 
 type DashboardShellProps = {
   children: ReactNode;
@@ -46,14 +47,10 @@ export function DashboardShell({ children }: DashboardShellProps) {
           <div className="flex w-full flex-col items-center gap-10">
             <Link
               href="/dashboard"
-              className={`relative flex h-12 w-12 cursor-pointer items-center justify-center rounded-[12px] border transition hover:border-[#E5E7EB] hover:bg-[#F9FAFB] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 ${
-                pathname === "/dashboard" || pathname.startsWith("/call/")
-                  ? "border-[#111827] bg-[#111827] text-white focus-visible:ring-[#2563EB]"
-                  : "border-transparent text-[#6B7280] opacity-50 focus-visible:ring-[#2563EB] hover:opacity-100"
-              }`}
-              aria-label="Call performance overview"
+              className="relative flex h-12 w-12 cursor-pointer items-center justify-center rounded-[14px] border border-[#E5E7EB] bg-[#F9FAFB] shadow-[0_1px_2px_rgba(17,24,39,0.04)] transition hover:border-[#D1D5DB] hover:bg-[#FFFFFF] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+              aria-label="Orvelle home"
             >
-              <LogoIcon className="h-8 w-8" />
+              <OrvelleBrandIcon size={30} priority />
             </Link>
 
             <nav className="flex w-full flex-col items-center gap-8">
