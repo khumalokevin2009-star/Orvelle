@@ -1,12 +1,5 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
 import "./globals.css";
-
-const geist = Geist({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-geist-sans"
-});
 
 export const metadata: Metadata = {
   title: "Call Performance Overview",
@@ -21,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geist.className} ${geist.variable}`}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint"
   },
@@ -34,10 +34,13 @@
     "type": "git",
     "url": "git+https://github.com/khumalokevin2009-star/Orvelle.git"
   },
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
   "bugs": {
     "url": "https://github.com/khumalokevin2009-star/Orvelle/issues"
   },
