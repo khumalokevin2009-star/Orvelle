@@ -300,7 +300,7 @@ function usePrefersReducedMotion() {
   return prefersReducedMotion;
 }
 
-function useRevealOnce<T extends HTMLElement>(disabled: boolean, rootMargin = "-10% 0px") {
+function useRevealOnce<T extends HTMLElement>(disabled: boolean, rootMargin = "0px 0px 12% 0px") {
   const ref = useRef<T | null>(null);
   const [visible, setVisible] = useState(disabled);
 
@@ -310,8 +310,33 @@ function useRevealOnce<T extends HTMLElement>(disabled: boolean, rootMargin = "-
       return;
     }
 
+    if (visible) {
+      return;
+    }
+
     const node = ref.current;
     if (!node) {
+      return;
+    }
+
+    const revealIfNearViewport = () => {
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const rect = node.getBoundingClientRect();
+
+      if (rect.top <= viewportHeight * 0.96 && rect.bottom >= viewportHeight * -0.12) {
+        setVisible(true);
+        return true;
+      }
+
+      return false;
+    };
+
+    if (revealIfNearViewport()) {
+      return;
+    }
+
+    if (typeof window.IntersectionObserver === "undefined") {
+      setVisible(true);
       return;
     }
 
@@ -326,7 +351,7 @@ function useRevealOnce<T extends HTMLElement>(disabled: boolean, rootMargin = "-
         observer.disconnect();
       },
       {
-        threshold: 0.18,
+        threshold: 0.01,
         rootMargin
       }
     );
@@ -334,7 +359,7 @@ function useRevealOnce<T extends HTMLElement>(disabled: boolean, rootMargin = "-
     observer.observe(node);
 
     return () => observer.disconnect();
-  }, [disabled, rootMargin]);
+  }, [disabled, rootMargin, visible]);
 
   return { ref, visible };
 }
@@ -531,7 +556,7 @@ function ProofSection({
   theme: Theme;
 }) {
   const [activeSeries, setActiveSeries] = useState<SeriesKey>("risk");
-  const { ref, visible } = useRevealOnce<HTMLDivElement>(prefersReducedMotion, "-15% 0px");
+  const { ref, visible } = useRevealOnce<HTMLDivElement>(prefersReducedMotion, "0px 0px 16% 0px");
   const riskValue = useCountUp(1120, visible, prefersReducedMotion);
   const recoveredValue = useCountUp(800, visible, prefersReducedMotion);
   const rateValue = useCountUp(42, visible, prefersReducedMotion);
@@ -1022,7 +1047,7 @@ export function LandingPage() {
   const [mounted, setMounted] = useState(false);
   const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
   const themeStyle = landingThemeStyles[theme];
-  const roiReveal = useRevealOnce<HTMLDivElement>(prefersReducedMotion, "-15% 0px");
+  const roiReveal = useRevealOnce<HTMLDivElement>(prefersReducedMotion, "0px 0px 16% 0px");
   const weeklyLower = useCountUp(600, roiReveal.visible, prefersReducedMotion);
   const weeklyUpper = useCountUp(1200, roiReveal.visible, prefersReducedMotion);
   const annualUpper = useCountUp(62400, roiReveal.visible, prefersReducedMotion, 1500);

@@ -387,18 +387,20 @@ textarea {
 
   .landing-reveal {
     opacity: 0;
-    transform: translateY(26px);
-    filter: blur(8px);
+    transform: translate3d(0, 22px, 0);
+    filter: blur(6px);
+    will-change: opacity, transform, filter;
     transition:
-      opacity 760ms cubic-bezier(0.22, 1, 0.36, 1),
-      transform 760ms cubic-bezier(0.22, 1, 0.36, 1),
-      filter 760ms cubic-bezier(0.22, 1, 0.36, 1);
+      opacity 520ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
+      filter 380ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .landing-reveal[data-visible="true"] {
     opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
+    transform: translate3d(0, 0, 0);
+    filter: none;
+    will-change: auto;
   }
 }
 
@@ -409,6 +411,23 @@ textarea {
 
   .landing-proof-annotation-outline {
     border-radius: 16px;
+  }
+
+  .landing-reveal {
+    transform: translate3d(0, 14px, 0);
+    filter: none;
+    will-change: opacity, transform;
+    transition:
+      opacity 260ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .landing-reveal[data-visible="true"] {
+    filter: none;
+  }
+
+  .motion-fade-up {
+    animation-duration: 360ms;
   }
 }
 
@@ -427,22 +446,6 @@ textarea {
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
-  }
-
-  main > * {
-    animation: ui-fade-up 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-
-  main > *:nth-child(1) {
-    animation-delay: 40ms;
-  }
-
-  main > *:nth-child(2) {
-    animation-delay: 120ms;
-  }
-
-  main > *:nth-child(3) {
-    animation-delay: 180ms;
   }
 }
 
