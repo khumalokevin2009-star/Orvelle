@@ -3,7 +3,9 @@ type WebhookLogMetadata = {
   requestId?: string | null;
   path?: string;
   contentType?: string | null;
+  eventType?: string;
   externalCallId?: string;
+  toNumber?: string;
   providerEvent?: string | null;
   answered?: boolean;
   duration?: number;

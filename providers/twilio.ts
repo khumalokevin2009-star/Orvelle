@@ -4,13 +4,19 @@ import { type CallProviderAdapter, type CallProviderPayload } from "@/providers/
 export type TwilioCallPayload = {
   CallSid?: string;
   From?: string;
+  To?: string;
   Timestamp?: string;
   StartTime?: string;
   CallDuration?: string | number;
   RecordingUrl?: string;
+  RecordingSid?: string;
+  RecordingStatus?: string;
+  RecordingDuration?: string | number;
   CallStatus?: string;
   AnsweredBy?: string;
 };
+
+export type TwilioWebhookEventType = "call_completed" | "recording_completed";
 
 export type TwilioWebhookValidationResult =
   | { ok: true }
@@ -47,6 +53,21 @@ function getTimestamp(payload: TwilioCallPayload) {
   return timestamp.toISOString();
 }
 
+export function getTwilioWebhookEventType(payload: TwilioCallPayload): TwilioWebhookEventType {
+  const recordingStatus = payload.RecordingStatus?.trim().toLowerCase();
+  const callStatus = payload.CallStatus?.trim().toLowerCase();
+
+  if (recordingStatus === "completed" || Boolean(payload.RecordingUrl?.trim())) {
+    return "recording_completed";
+  }
+
+  if (callStatus === "completed") {
+    return "call_completed";
+  }
+
+  throw new Error("Unsupported Twilio webhook event. Expected a call or recording completion event.");
+}
+
 function getAnsweredFlag(payload: TwilioCallPayload) {
   const normalizedStatus = payload.CallStatus?.trim().toLowerCase();
 
@@ -71,6 +92,10 @@ export function mapTwilioPayload(payload: TwilioCallPayload): CallProviderPayloa
     external_call_id: payload.CallSid.trim(),
     provider: "twilio"
   };
+}
+
+export function getTwilioCallDuration(payload: TwilioCallPayload) {
+  return parseDurationSeconds(payload.CallDuration ?? payload.RecordingDuration);
 }
 
 export const twilioProvider: CallProviderAdapter<TwilioCallPayload> = {

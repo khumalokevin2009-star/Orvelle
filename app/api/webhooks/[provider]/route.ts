@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildCallInsertFromProviderPayload } from "@/lib/call-ingestion";
 import {
   logWebhookFailure,
   logWebhookSuccess,
@@ -136,102 +135,42 @@ export async function POST(
   const normalizedPayload = parsedWebhook.payload;
 
   try {
-    const { data: existingCall, error: duplicateLookupError } = await supabase
-      .from("calls")
-      .select("id")
-      .eq("external_id", normalizedPayload.external_call_id)
-      .maybeSingle();
+    const ingestionResult = await handler.ingest({
+      supabase,
+      parsedWebhook
+    });
 
-    if (duplicateLookupError) {
-      throw duplicateLookupError;
-    }
-
-    if (existingCall?.id) {
-      logWebhookSuccess("Duplicate webhook call ignored.", {
+    if (ingestionResult.body.duplicate) {
+      logWebhookWarning("Duplicate webhook call ignored.", {
         ...requestMetadata,
         externalCallId: normalizedPayload.external_call_id,
+        eventType: ingestionResult.metadata.eventType,
+        toNumber: ingestionResult.metadata.toNumber,
         duplicate: true,
-        callId: existingCall.id as string,
-        providerEvent: parsedWebhook.metadata.providerEvent ?? null,
-        answered: parsedWebhook.metadata.answered,
-        duration: parsedWebhook.metadata.duration,
-        hasRecording: parsedWebhook.metadata.hasRecording,
-        status: 200
+        callId: (ingestionResult.body.callId as string | undefined) ?? undefined,
+        providerEvent: ingestionResult.metadata.providerEvent ?? null,
+        answered: ingestionResult.metadata.answered,
+        duration: ingestionResult.metadata.duration,
+        hasRecording: ingestionResult.metadata.hasRecording,
+        status: ingestionResult.status
       });
-
-      return NextResponse.json(
-        {
-          message: "Webhook call already ingested.",
-          duplicate: true,
-          callId: existingCall.id
-        },
-        { status: 200 }
-      );
+    } else {
+      logWebhookSuccess("Webhook call ingested successfully.", {
+        ...requestMetadata,
+        externalCallId: normalizedPayload.external_call_id,
+        eventType: ingestionResult.metadata.eventType,
+        toNumber: ingestionResult.metadata.toNumber,
+        duplicate: false,
+        callId: (ingestionResult.body.callId as string | undefined) ?? undefined,
+        providerEvent: ingestionResult.metadata.providerEvent ?? null,
+        answered: ingestionResult.metadata.answered,
+        duration: ingestionResult.metadata.duration,
+        hasRecording: ingestionResult.metadata.hasRecording,
+        status: ingestionResult.status
+      });
     }
 
-    const insertPayload = buildCallInsertFromProviderPayload(normalizedPayload, {
-      callerName: normalizedPayload.phone_number,
-      status: normalizedPayload.answered ? "under_review" : "action_required"
-    });
-
-    const { data: insertedCall, error: insertError } = await supabase
-      .from("calls")
-      .insert(insertPayload)
-      .select("id")
-      .single();
-
-    if (insertError) {
-      if ((insertError as { code?: string }).code === "23505") {
-        const { data: duplicateCall } = await supabase
-          .from("calls")
-          .select("id")
-          .eq("external_id", normalizedPayload.external_call_id)
-          .maybeSingle();
-
-        logWebhookWarning("Duplicate webhook call detected during insert race.", {
-          ...requestMetadata,
-          externalCallId: normalizedPayload.external_call_id,
-          duplicate: true,
-          callId: (duplicateCall?.id as string | undefined) ?? undefined,
-          providerEvent: parsedWebhook.metadata.providerEvent ?? null,
-          answered: parsedWebhook.metadata.answered,
-          duration: parsedWebhook.metadata.duration,
-          hasRecording: parsedWebhook.metadata.hasRecording,
-          status: 200
-        });
-
-        return NextResponse.json(
-          {
-            message: "Webhook call already ingested.",
-            duplicate: true,
-            callId: duplicateCall?.id ?? null
-          },
-          { status: 200 }
-        );
-      }
-
-      throw insertError;
-    }
-
-    logWebhookSuccess("Webhook call ingested successfully.", {
-      ...requestMetadata,
-      externalCallId: normalizedPayload.external_call_id,
-      duplicate: false,
-      callId: insertedCall.id as string,
-      providerEvent: parsedWebhook.metadata.providerEvent ?? null,
-      answered: parsedWebhook.metadata.answered,
-      duration: parsedWebhook.metadata.duration,
-      hasRecording: parsedWebhook.metadata.hasRecording,
-      status: 201
-    });
-
-    return NextResponse.json(
-      {
-        message: "Webhook ingested successfully.",
-        callId: insertedCall.id
-      },
-      { status: 201 }
-    );
+    return NextResponse.json(ingestionResult.body, { status: ingestionResult.status });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unexpected webhook ingestion failure.";
@@ -239,6 +178,8 @@ export async function POST(
     logWebhookFailure("Webhook ingestion failed.", {
       ...requestMetadata,
       externalCallId: normalizedPayload.external_call_id,
+      eventType: parsedWebhook.metadata.eventType,
+      toNumber: parsedWebhook.metadata.toNumber,
       providerEvent: parsedWebhook.metadata.providerEvent ?? null,
       answered: parsedWebhook.metadata.answered,
       duration: parsedWebhook.metadata.duration,
