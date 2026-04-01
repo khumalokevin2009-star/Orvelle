@@ -139,6 +139,7 @@ async function handlePrepareUploads(
           ok: true,
           bucketName: CALL_RECORDINGS_BUCKET,
           storagePath,
+          signedUrl: data.signedUrl,
           token: data.token,
           contentType: getAudioMimeType(file.fileName, file.contentType)
         };

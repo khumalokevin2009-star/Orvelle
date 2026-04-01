@@ -2,7 +2,6 @@
 
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import { AudioFileIcon, TrashIcon, UploadIcon } from "@/components/icons";
-import { createClient } from "@/lib/supabase/client";
 import {
   ACCEPTED_AUDIO_EXTENSIONS,
   CALL_RECORDINGS_BUCKET,
@@ -43,6 +42,7 @@ type UploadApiResult = {
   callId?: string;
   storagePath?: string;
   bucketName?: string;
+  signedUrl?: string;
   token?: string;
   contentType?: string;
   reason?: UploadFailureReason;
@@ -61,6 +61,32 @@ async function readUploadResponse(response: Response) {
   } catch {
     throw new Error(
       `Upload route returned HTTP ${response.status} ${response.statusText} instead of JSON.`
+    );
+  }
+}
+
+async function uploadFileToSignedUrl(
+  signedUrl: string,
+  file: File,
+  contentType: string
+) {
+  const body = new FormData();
+  body.append("cacheControl", "3600");
+  body.append("", file);
+
+  const response = await fetch(signedUrl, {
+    method: "PUT",
+    body,
+    headers: {
+      "x-upsert": "false",
+      ...(contentType ? { Accept: "application/json" } : {})
+    }
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(
+      responseText || `Supabase Storage upload returned HTTP ${response.status} ${response.statusText}.`
     );
   }
 }
@@ -204,7 +230,6 @@ export function CallDataUploadPanel() {
     );
 
     try {
-      const supabase = createClient();
       const prepareResponse = await fetch("/api/call-uploads", {
         method: "POST",
         headers: {
@@ -223,12 +248,14 @@ export function CallDataUploadPanel() {
 
       const preparePayload = await readUploadResponse(prepareResponse);
       const prepareResults = preparePayload.results ?? [];
-      const successfulPreparations = prepareResults.filter((result) => result.ok && result.storagePath && result.token);
+      const successfulPreparations = prepareResults.filter(
+        (result) => result.ok && result.storagePath && result.signedUrl
+      );
       const uploadResults = await Promise.all(
         successfulPreparations.map(async (result) => {
           const matchingFile = filesToUpload.find((file) => file.id === result.clientId);
 
-          if (!matchingFile || !result.storagePath || !result.token) {
+          if (!matchingFile || !result.storagePath || !result.signedUrl) {
             const failure = formatUploadFailure("The upload route returned incomplete signed upload data.");
             console.error("[call-data-upload-panel] Missing signed upload payload.", {
               clientId: result.clientId,
@@ -243,15 +270,22 @@ export function CallDataUploadPanel() {
             } satisfies UploadApiResult;
           }
 
-          const { error } = await supabase.storage
-            .from(result.bucketName ?? CALL_RECORDINGS_BUCKET)
-            .uploadToSignedUrl(result.storagePath, result.token, matchingFile.file, {
-              contentType: result.contentType || matchingFile.file.type || getAudioMimeType(matchingFile.name),
-              upsert: false
-            });
+          try {
+            await uploadFileToSignedUrl(
+              result.signedUrl,
+              matchingFile.file,
+              result.contentType || matchingFile.file.type || getAudioMimeType(matchingFile.name)
+            );
 
-          if (error) {
-            const failure = formatUploadFailure(error.message);
+            return {
+              clientId: result.clientId,
+              ok: true,
+              storagePath: result.storagePath
+            } satisfies UploadApiResult;
+          } catch (error) {
+            const failure = formatUploadFailure(
+              error instanceof Error ? error.message : "Unable to upload the file to the signed Supabase URL."
+            );
             console.error("[call-data-upload-panel] Direct Supabase Storage upload failed.", {
               clientId: result.clientId,
               storagePath: result.storagePath,
@@ -266,12 +300,6 @@ export function CallDataUploadPanel() {
               reason: failure.reason
             } satisfies UploadApiResult;
           }
-
-          return {
-            clientId: result.clientId,
-            ok: true,
-            storagePath: result.storagePath
-          } satisfies UploadApiResult;
         })
       );
 
