@@ -60,6 +60,28 @@ function getUrgencyClasses(urgency: CallTableRow["urgency"]) {
   return "border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280]";
 }
 
+function getOutcomeClasses(outcome: string) {
+  const normalizedOutcome = outcome.toLowerCase();
+
+  if (normalizedOutcome === "converted") {
+    return "border border-[#D1E9D7] bg-[#F4FBF5] text-[#256B44]";
+  }
+
+  if (normalizedOutcome === "unqualified") {
+    return "border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280]";
+  }
+
+  if (normalizedOutcome.includes("missed") || normalizedOutcome.includes("no callback")) {
+    return "border border-[#F2D8D8] bg-[#FFF6F6] text-[#A04C4C]";
+  }
+
+  if (normalizedOutcome.includes("poor handling")) {
+    return "border border-[#F0DFC1] bg-[#FFF9EE] text-[#946C19]";
+  }
+
+  return "border border-[#C7D2FE] bg-[#EEF2FF] text-[#1E3A8A]";
+}
+
 function sortPriorityRows(rows: DashboardCallRow[]) {
   const urgencyRank: Record<CallTableRow["urgency"], number> = {
     "Critical Priority": 0,
@@ -300,18 +322,18 @@ function CallsOverviewTable({
       <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6">
         <h2 className="type-section-title text-[20px] sm:text-[22px]">Analysed calls</h2>
         <p className="type-body-text mt-2 text-[14px]">
-          Recent analysed calls driving missed revenue, recoveries, and operational follow-up.
+          Revenue-recovery work queue showing the calls your team needs to understand, recover, or close out.
         </p>
       </div>
 
       <div className="ui-scrollbar ui-scrollbar-x overflow-x-auto">
-        <table className="min-w-[760px] border-separate border-spacing-0 text-left">
+        <table className="min-w-[840px] border-separate border-spacing-0 text-left">
           <thead className="bg-[#F9FAFB]">
             <tr className="text-[13px] font-medium uppercase tracking-[0.05em] text-[#374151]">
               <th className="border-b border-[#E5E7EB] px-5 py-3.5">Name</th>
               <th className="border-b border-[#E5E7EB] px-5 py-3.5">Outcome</th>
               <th className="border-b border-[#E5E7EB] px-5 py-3.5">Issue</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Value</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Estimated Value</th>
               <th className="border-b border-[#E5E7EB] px-5 py-3.5">Timestamp</th>
             </tr>
           </thead>
@@ -330,25 +352,47 @@ function CallsOverviewTable({
                       onOpenRecord(row);
                     }
                   }}
-                  className="cursor-pointer transition outline-none hover:bg-[#F3F4F6] focus-visible:bg-[#F3F4F6]"
+                  className="group cursor-pointer transition outline-none hover:bg-[#F8FAFC] focus-visible:bg-[#F8FAFC]"
                 >
-                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
-                    <div className="type-section-title text-[16px]">{row.caller}</div>
-                    <div className="type-muted-text mt-1 text-[13px]">{getRowActionStatus(row)}</div>
-                  </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
-                    <div className="type-section-title text-[15px]">{row.callOutcome ?? "Pending"}</div>
-                  </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
-                    <div className="type-body-text text-[14px]">{getIssueLabel(row)}</div>
-                  </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
-                    <div className="text-[16px] font-bold tracking-[-0.02em] text-[#111827]">
-                      {row.revenueImpact ?? row.revenue}
+                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="type-section-title text-[16px]">{row.caller}</div>
+                        <div className="type-muted-text mt-1 text-[13px]">{getRowActionStatus(row)}</div>
+                      </div>
+                      <span className="type-muted-text mt-0.5 shrink-0 text-[12px] transition group-hover:text-[#111827] group-focus-visible:text-[#111827]">
+                        Open record →
+                      </span>
                     </div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
-                    <div className="type-body-text text-[14px]">{row.date}</div>
+                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getOutcomeClasses(
+                        row.callOutcome ?? "Pending"
+                      )}`}
+                    >
+                      {row.callOutcome ?? "Pending"}
+                    </span>
+                  </td>
+                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                    <div className="type-section-title text-[15px] leading-6">{getIssueLabel(row)}</div>
+                    <div className="type-body-text mt-1 text-[13px]">
+                      {row.conciseAnalystNote ?? row.analystNote ?? row.reason}
+                    </div>
+                  </td>
+                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                    <div className="inline-flex rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+                      <div>
+                        <div className="text-[16px] font-bold tracking-[-0.02em] text-[#111827]">
+                          {row.revenueImpact ?? row.revenue}
+                        </div>
+                        <div className="type-label-text mt-0.5 text-[10px]">Revenue Value</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                    <div className="type-section-title text-[14px]">{row.date}</div>
+                    <div className="type-muted-text mt-1 text-[12px]">{row.time}</div>
                   </td>
                 </tr>
               ))
