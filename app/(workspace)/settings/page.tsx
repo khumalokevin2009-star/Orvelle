@@ -54,6 +54,9 @@ function Field({
 const inputClassName =
   "h-12 w-full rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-[15px] text-[#111827] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]";
 
+const disabledUserAccessButtonClassName =
+  "inline-flex items-center justify-center rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] text-[#6B7280] opacity-50 cursor-not-allowed pointer-events-none";
+
 export default function SettingsPage() {
   const [businessProfile, setBusinessProfile] = useState({
     businessName: "Cotrnested Services Ltd.",
@@ -228,14 +231,26 @@ export default function SettingsPage() {
             title="User Access"
             description="Review user accounts, assigned roles, and access ownership across the platform."
             actions={
-              <button
-                type="button"
-                className="button-secondary-ui inline-flex cursor-pointer items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
-              >
-                Invite User
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-1 text-[12px] font-medium text-[#6B7280]">
+                  Coming soon
+                </span>
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title="User management will be available in a future release"
+                  className={`${disabledUserAccessButtonClassName} px-4 py-2.5 text-[14px]`}
+                >
+                  Invite User
+                </button>
+              </div>
             }
           >
+            <div className="mb-4 rounded-[12px] border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-[13px] text-[#6B7280]">
+              User management will be available in a future release.
+            </div>
+
             <div className="space-y-3">
               {userAccessRecords.map((record) => (
                 <div key={record.id} className="surface-secondary px-4 py-4">
@@ -249,7 +264,10 @@ export default function SettingsPage() {
                     </div>
                     <button
                       type="button"
-                      className="button-secondary-ui inline-flex cursor-pointer items-center justify-center px-3 py-2 text-[13px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                      disabled
+                      aria-disabled="true"
+                      title="User management will be available in a future release"
+                      className={`${disabledUserAccessButtonClassName} px-3 py-2 text-[13px]`}
                     >
                       Manage
                     </button>
