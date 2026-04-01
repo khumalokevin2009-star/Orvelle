@@ -1,11 +1,32 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  ACCEPTED_AUDIO_EXTENSIONS,
+  ACCEPTED_AUDIO_MIME_TYPES,
+  CALL_RECORDINGS_BUCKET,
+  MAX_AUDIO_UPLOAD_BYTES,
+  formatUploadFailure,
+  getAudioMimeType,
+  isSupportedAudioFile
+} from "@/lib/call-uploads";
 
-const bucketName = "call-recordings";
 const defaultCallerName = "Unknown Caller";
 const defaultCallerPhone = "Phone number placeholder";
 const defaultAssignedOwner = "unassigned";
 const defaultSourceSystem = "manual_upload";
+
+type PrepareUploadFile = {
+  clientId: string;
+  fileName: string;
+  fileSize: number;
+  contentType?: string | null;
+};
+
+type FinalizeUploadFile = {
+  clientId: string;
+  fileName: string;
+  storagePath: string;
+};
 
 function sanitizeFileName(fileName: string) {
   return fileName
@@ -32,94 +53,163 @@ async function ensureBucketExists(supabase: ReturnType<typeof createAdminClient>
     throw new Error(`Unable to verify Supabase storage buckets: ${listError.message}`);
   }
 
-  const bucketExists = (buckets ?? []).some((bucket) => bucket.id === bucketName || bucket.name === bucketName);
+  const bucketExists = (buckets ?? []).some(
+    (bucket) => bucket.id === CALL_RECORDINGS_BUCKET || bucket.name === CALL_RECORDINGS_BUCKET
+  );
 
   if (bucketExists) {
     return;
   }
 
-  const { error: createError } = await supabase.storage.createBucket(bucketName, {
+  const { error: createError } = await supabase.storage.createBucket(CALL_RECORDINGS_BUCKET, {
     public: false,
-    allowedMimeTypes: ["audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/m4a"],
-    fileSizeLimit: 52428800
+    allowedMimeTypes: [...ACCEPTED_AUDIO_MIME_TYPES],
+    fileSizeLimit: MAX_AUDIO_UPLOAD_BYTES
   });
 
   if (createError && !createError.message.toLowerCase().includes("already exists")) {
-    throw new Error(`Unable to create the Supabase storage bucket "${bucketName}": ${createError.message}`);
+    throw new Error(
+      `Unable to create the Supabase storage bucket "${CALL_RECORDINGS_BUCKET}": ${createError.message}`
+    );
   }
 }
 
-export async function POST(request: Request) {
-  let supabase;
+function validateUploadFile(file: PrepareUploadFile) {
+  if (!file.fileName) {
+    return formatUploadFailure("File validation failed: a file name is required.");
+  }
 
-  try {
-    supabase = createAdminClient();
-  } catch (error) {
-    return NextResponse.json(
-      {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to initialize the Supabase admin client.",
-        results: []
-      },
-      { status: 500 }
+  if (!isSupportedAudioFile(file.fileName, file.contentType)) {
+    return formatUploadFailure(
+      `File validation failed: unsupported type. Accepted formats: ${ACCEPTED_AUDIO_EXTENSIONS.join(", ")}.`
     );
   }
 
-  try {
-    await ensureBucketExists(supabase);
-  } catch (error) {
-    return NextResponse.json(
-      {
-        message:
-          error instanceof Error
-            ? error.message
-            : `Unable to prepare the Supabase storage bucket "${bucketName}".`,
-        results: []
-      },
-      { status: 500 }
+  if (!Number.isFinite(file.fileSize) || file.fileSize <= 0) {
+    return formatUploadFailure("File validation failed: the selected file is empty or invalid.");
+  }
+
+  if (file.fileSize > MAX_AUDIO_UPLOAD_BYTES) {
+    return formatUploadFailure(
+      `File validation failed: "${file.fileName}" exceeds the 50 MB upload limit.`
     );
   }
 
-  const formData = await request.formData();
-  const files = formData
-    .getAll("files")
-    .filter((entry): entry is File => entry instanceof File);
-  const clientIds = formData
-    .getAll("clientIds")
-    .map((value) => String(value));
+  return null;
+}
 
-  if (files.length === 0) {
-    return NextResponse.json(
-      {
-        message: "No audio files were submitted for upload.",
-        results: []
-      },
-      { status: 400 }
-    );
-  }
-
+async function handlePrepareUploads(
+  supabase: ReturnType<typeof createAdminClient>,
+  files: PrepareUploadFile[]
+) {
   const results = await Promise.all(
     files.map(async (file, index) => {
-      const clientId = clientIds[index] ?? `${file.name}-${index}`;
-      const storagePath = getStoragePath(file.name);
+      const clientId = file.clientId || `${file.fileName}-${index}`;
+      const validationFailure = validateUploadFile(file);
+
+      if (validationFailure) {
+        console.warn("[call-uploads] File validation blocked upload preparation.", {
+          clientId,
+          fileName: file.fileName,
+          reason: validationFailure.reason,
+          message: validationFailure.message
+        });
+
+        return {
+          clientId,
+          ok: false,
+          error: validationFailure.message,
+          reason: validationFailure.reason
+        };
+      }
+
+      const storagePath = getStoragePath(file.fileName);
 
       try {
-        const fileBuffer = Buffer.from(await file.arrayBuffer());
-        const { error: storageError } = await supabase.storage
-          .from(bucketName)
-          .upload(storagePath, fileBuffer, {
-            contentType: file.type || undefined,
-            upsert: false
-          });
+        const { data, error } = await supabase.storage
+          .from(CALL_RECORDINGS_BUCKET)
+          .createSignedUploadUrl(storagePath);
 
-        if (storageError) {
-          throw new Error(storageError.message);
+        if (error || !data?.token) {
+          throw new Error(error?.message || "Supabase did not return a signed upload token.");
         }
 
-        const startedAt = new Date().toISOString();
+        return {
+          clientId,
+          ok: true,
+          bucketName: CALL_RECORDINGS_BUCKET,
+          storagePath,
+          token: data.token,
+          contentType: getAudioMimeType(file.fileName, file.contentType)
+        };
+      } catch (error) {
+        const failure = formatUploadFailure(
+          error instanceof Error
+            ? error.message
+            : "Unable to prepare a signed Supabase Storage upload."
+        );
 
+        console.error("[call-uploads] Failed to create signed upload URL.", {
+          clientId,
+          fileName: file.fileName,
+          storagePath,
+          reason: failure.reason,
+          message: failure.message
+        });
+
+        return {
+          clientId,
+          ok: false,
+          error: failure.message,
+          reason: failure.reason
+        };
+      }
+    })
+  );
+
+  const successCount = results.filter((result) => result.ok).length;
+  const failureCount = results.length - successCount;
+
+  return NextResponse.json(
+    {
+      message:
+        successCount === 0
+          ? "Supabase upload preparation failed for every selected file."
+          : failureCount === 0
+            ? `${successCount} upload${successCount === 1 ? "" : "s"} prepared successfully.`
+            : `${successCount} upload${successCount === 1 ? "" : "s"} prepared successfully and ${failureCount} failed validation.`,
+      results
+    },
+    { status: successCount === 0 ? 400 : 200 }
+  );
+}
+
+async function handleFinalizeUploads(
+  supabase: ReturnType<typeof createAdminClient>,
+  uploads: FinalizeUploadFile[]
+) {
+  const results = await Promise.all(
+    uploads.map(async (upload, index) => {
+      const clientId = upload.clientId || `${upload.fileName}-${index}`;
+
+      if (!upload.storagePath) {
+        const failure = formatUploadFailure("The storage path was missing during upload finalization.");
+        console.error("[call-uploads] Missing storage path during finalization.", {
+          clientId,
+          fileName: upload.fileName,
+          reason: failure.reason
+        });
+
+        return {
+          clientId,
+          ok: false,
+          error: failure.message,
+          reason: failure.reason
+        };
+      }
+
+      try {
+        const startedAt = new Date().toISOString();
         const { data: insertedCall, error: insertError } = await supabase
           .from("calls")
           .insert({
@@ -128,8 +218,8 @@ export async function POST(request: Request) {
             direction: "inbound",
             started_at: startedAt,
             ended_at: null,
-            audio_url: `${bucketName}/${storagePath}`,
-            recording_filename: file.name,
+            audio_url: `${CALL_RECORDINGS_BUCKET}/${upload.storagePath}`,
+            recording_filename: upload.fileName,
             source_system: defaultSourceSystem,
             assigned_owner: defaultAssignedOwner,
             status: "action_required",
@@ -140,7 +230,7 @@ export async function POST(request: Request) {
           .single();
 
         if (insertError) {
-          await supabase.storage.from(bucketName).remove([storagePath]);
+          await supabase.storage.from(CALL_RECORDINGS_BUCKET).remove([upload.storagePath]);
           throw new Error(insertError.message);
         }
 
@@ -148,16 +238,28 @@ export async function POST(request: Request) {
           clientId,
           ok: true,
           callId: insertedCall.id as string,
-          storagePath: `${bucketName}/${storagePath}`
+          storagePath: `${CALL_RECORDINGS_BUCKET}/${upload.storagePath}`
         };
       } catch (error) {
+        const failure = formatUploadFailure(
+          error instanceof Error
+            ? error.message
+            : "Unable to create a call record after the Supabase upload completed."
+        );
+
+        console.error("[call-uploads] Failed to finalize uploaded call recording.", {
+          clientId,
+          fileName: upload.fileName,
+          storagePath: upload.storagePath,
+          reason: failure.reason,
+          message: failure.message
+        });
+
         return {
           clientId,
           ok: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unable to upload the file and create a call record."
+          error: failure.message,
+          reason: failure.reason
         };
       }
     })
@@ -166,24 +268,138 @@ export async function POST(request: Request) {
   const successCount = results.filter((result) => result.ok).length;
   const failureCount = results.length - successCount;
 
-  if (successCount === 0) {
+  return NextResponse.json(
+    {
+      message:
+        successCount === 0
+          ? "The upload failed before a call record could be created."
+          : failureCount === 0
+            ? `${successCount} call recording${successCount === 1 ? "" : "s"} uploaded successfully.`
+            : `${successCount} call recording${successCount === 1 ? "" : "s"} uploaded successfully and ${failureCount} failed.`,
+      results
+    },
+    { status: successCount === 0 ? 500 : 200 }
+  );
+}
+
+export async function POST(request: Request) {
+  let supabase;
+
+  try {
+    supabase = createAdminClient();
+  } catch (error) {
+    const failure = formatUploadFailure(
+      error instanceof Error
+        ? error.message
+        : "Unable to initialize the Supabase admin client."
+    );
+
+    console.error("[call-uploads] Failed to initialize Supabase admin client.", {
+      reason: failure.reason,
+      message: failure.message
+    });
+
     return NextResponse.json(
       {
-        message:
-          failureCount === 1
-            ? "The upload failed before a call record could be created."
-            : "All uploads failed before call records could be created.",
-        results
+        message: failure.message,
+        results: []
       },
       { status: 500 }
     );
   }
 
-  return NextResponse.json({
-    message:
-      failureCount === 0
-        ? `${successCount} call recording${successCount === 1 ? "" : "s"} uploaded successfully.`
-        : `${successCount} call recording${successCount === 1 ? "" : "s"} uploaded successfully and ${failureCount} failed.`,
-    results
-  });
+  try {
+    await ensureBucketExists(supabase);
+  } catch (error) {
+    const failure = formatUploadFailure(
+      error instanceof Error
+        ? error.message
+        : `Unable to prepare the Supabase storage bucket "${CALL_RECORDINGS_BUCKET}".`
+    );
+
+    console.error("[call-uploads] Failed to prepare Supabase storage bucket.", {
+      bucketName: CALL_RECORDINGS_BUCKET,
+      reason: failure.reason,
+      message: failure.message
+    });
+
+    return NextResponse.json(
+      {
+        message: failure.message,
+        results: []
+      },
+      { status: 500 }
+    );
+  }
+
+  const requestContentType = request.headers.get("content-type") ?? "";
+
+  if (!requestContentType.includes("application/json")) {
+    const failure = formatUploadFailure(
+      "The upload route expected JSON metadata, but received a raw multipart file body instead."
+    );
+
+    console.error("[call-uploads] Unsupported upload request shape.", {
+      reason: failure.reason,
+      contentType: requestContentType
+    });
+
+    return NextResponse.json(
+      {
+        message: failure.message,
+        results: []
+      },
+      { status: 415 }
+    );
+  }
+
+  const payload = (await request.json()) as
+    | {
+        action: "prepare";
+        files: PrepareUploadFile[];
+      }
+    | {
+        action: "finalize";
+        uploads: FinalizeUploadFile[];
+      };
+
+  if (payload.action === "prepare") {
+    const files = Array.isArray(payload.files) ? payload.files : [];
+
+    if (files.length === 0) {
+      return NextResponse.json(
+        {
+          message: "No audio files were submitted for upload preparation.",
+          results: []
+        },
+        { status: 400 }
+      );
+    }
+
+    return handlePrepareUploads(supabase, files);
+  }
+
+  if (payload.action === "finalize") {
+    const uploads = Array.isArray(payload.uploads) ? payload.uploads : [];
+
+    if (uploads.length === 0) {
+      return NextResponse.json(
+        {
+          message: "No uploaded files were provided for call record finalization.",
+          results: []
+        },
+        { status: 400 }
+      );
+    }
+
+    return handleFinalizeUploads(supabase, uploads);
+  }
+
+  return NextResponse.json(
+    {
+      message: "Unsupported upload action.",
+      results: []
+    },
+    { status: 400 }
+  );
 }

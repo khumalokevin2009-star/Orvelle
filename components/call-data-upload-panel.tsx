@@ -2,7 +2,17 @@
 
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import { AudioFileIcon, TrashIcon, UploadIcon } from "@/components/icons";
-import { ACCEPTED_AUDIO_EXTENSIONS } from "@/data/mock-platform-data";
+import { createClient } from "@/lib/supabase/client";
+import {
+  ACCEPTED_AUDIO_EXTENSIONS,
+  CALL_RECORDINGS_BUCKET,
+  MAX_AUDIO_UPLOAD_BYTES,
+  formatUploadFailure,
+  getAudioFileExtension,
+  getAudioMimeType,
+  isSupportedAudioFile,
+  type UploadFailureReason
+} from "@/lib/call-uploads";
 
 type UploadStatus = "Uploading" | "Ready for analysis" | "Queued for analysis" | "Upload failed";
 
@@ -15,6 +25,7 @@ type UploadedCallFile = {
   file: File;
   callId?: string;
   storagePath?: string;
+  failureReason?: UploadFailureReason;
   errorMessage?: string;
 };
 
@@ -26,9 +37,32 @@ function formatFileSize(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getExtension(fileName: string) {
-  const lastDotIndex = fileName.lastIndexOf(".");
-  return lastDotIndex >= 0 ? fileName.slice(lastDotIndex).toLowerCase() : "";
+type UploadApiResult = {
+  clientId: string;
+  ok: boolean;
+  callId?: string;
+  storagePath?: string;
+  bucketName?: string;
+  token?: string;
+  contentType?: string;
+  reason?: UploadFailureReason;
+  error?: string;
+};
+
+async function readUploadResponse(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText) {
+    return {} as { message?: string; results?: UploadApiResult[] };
+  }
+
+  try {
+    return JSON.parse(responseText) as { message?: string; results?: UploadApiResult[] };
+  } catch {
+    throw new Error(
+      `Upload route returned HTTP ${response.status} ${response.statusText} instead of JSON.`
+    );
+  }
 }
 
 function getStatusStyles(status: UploadStatus) {
@@ -62,18 +96,18 @@ export function CallDataUploadPanel() {
 
   function queueFiles(fileList: FileList | File[]) {
     const incomingFiles = Array.from(fileList);
-    const validFiles = incomingFiles.filter((file) =>
-      ACCEPTED_AUDIO_EXTENSIONS.includes(getExtension(file.name) as (typeof ACCEPTED_AUDIO_EXTENSIONS)[number])
-    );
-    const rejectedFiles = incomingFiles.filter(
+    const validFiles = incomingFiles.filter(
       (file) =>
-        !ACCEPTED_AUDIO_EXTENSIONS.includes(getExtension(file.name) as (typeof ACCEPTED_AUDIO_EXTENSIONS)[number])
+        isSupportedAudioFile(file.name, file.type) &&
+        file.size > 0 &&
+        file.size <= MAX_AUDIO_UPLOAD_BYTES
     );
+    const rejectedFiles = incomingFiles.filter((file) => !validFiles.includes(file));
 
     if (rejectedFiles.length > 0) {
       setFeedbackTone("error");
       setFeedbackMessage(
-        `Unsupported file types were excluded. Accepted formats: ${ACCEPTED_AUDIO_EXTENSIONS.join(", ")}.`
+        `Unsupported or oversized files were excluded. Accepted formats: ${ACCEPTED_AUDIO_EXTENSIONS.join(", ")} up to 50 MB.`
       );
     } else {
       setFeedbackTone("neutral");
@@ -100,7 +134,7 @@ export function CallDataUploadPanel() {
       return {
         id,
         name: file.name,
-        extension: getExtension(file.name),
+        extension: getAudioFileExtension(file.name),
         size: file.size,
         status: "Uploading" as const,
         file
@@ -170,31 +204,122 @@ export function CallDataUploadPanel() {
     );
 
     try {
-      const formData = new FormData();
-
-      filesToUpload.forEach((file) => {
-        formData.append("files", file.file, file.name);
-        formData.append("clientIds", file.id);
-      });
-
-      const response = await fetch("/api/call-uploads", {
+      const supabase = createClient();
+      const prepareResponse = await fetch("/api/call-uploads", {
         method: "POST",
-        body: formData
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "prepare",
+          files: filesToUpload.map((file) => ({
+            clientId: file.id,
+            fileName: file.name,
+            fileSize: file.size,
+            contentType: file.file.type || getAudioMimeType(file.name)
+          }))
+        })
       });
 
-      const payload = (await response.json()) as {
-        message?: string;
-        results?: Array<{
-          clientId: string;
-          ok: boolean;
-          callId?: string;
-          storagePath?: string;
-          error?: string;
-        }>;
-      };
+      const preparePayload = await readUploadResponse(prepareResponse);
+      const prepareResults = preparePayload.results ?? [];
+      const successfulPreparations = prepareResults.filter((result) => result.ok && result.storagePath && result.token);
+      const uploadResults = await Promise.all(
+        successfulPreparations.map(async (result) => {
+          const matchingFile = filesToUpload.find((file) => file.id === result.clientId);
 
-      const results = payload.results ?? [];
-      const resultMap = new Map(results.map((result) => [result.clientId, result]));
+          if (!matchingFile || !result.storagePath || !result.token) {
+            const failure = formatUploadFailure("The upload route returned incomplete signed upload data.");
+            console.error("[call-data-upload-panel] Missing signed upload payload.", {
+              clientId: result.clientId,
+              reason: failure.reason
+            });
+
+            return {
+              clientId: result.clientId,
+              ok: false,
+              error: failure.message,
+              reason: failure.reason
+            } satisfies UploadApiResult;
+          }
+
+          const { error } = await supabase.storage
+            .from(result.bucketName ?? CALL_RECORDINGS_BUCKET)
+            .uploadToSignedUrl(result.storagePath, result.token, matchingFile.file, {
+              contentType: result.contentType || matchingFile.file.type || getAudioMimeType(matchingFile.name),
+              upsert: false
+            });
+
+          if (error) {
+            const failure = formatUploadFailure(error.message);
+            console.error("[call-data-upload-panel] Direct Supabase Storage upload failed.", {
+              clientId: result.clientId,
+              storagePath: result.storagePath,
+              reason: failure.reason,
+              message: failure.message
+            });
+
+            return {
+              clientId: result.clientId,
+              ok: false,
+              error: failure.message,
+              reason: failure.reason
+            } satisfies UploadApiResult;
+          }
+
+          return {
+            clientId: result.clientId,
+            ok: true,
+            storagePath: result.storagePath
+          } satisfies UploadApiResult;
+        })
+      );
+
+      const successfulUploads = uploadResults.filter((result) => result.ok && result.storagePath);
+      let finalizeResults: UploadApiResult[] = [];
+      let finalizeMessage = "";
+      let finalizeStatusOk = true;
+
+      if (successfulUploads.length > 0) {
+        const finalizeResponse = await fetch("/api/call-uploads", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            action: "finalize",
+            uploads: successfulUploads.map((result) => {
+              const matchingFile = filesToUpload.find((file) => file.id === result.clientId);
+
+              return {
+                clientId: result.clientId,
+                fileName: matchingFile?.name ?? "uploaded-file",
+                storagePath: result.storagePath
+              };
+            })
+          })
+        });
+
+        const finalizePayload = await readUploadResponse(finalizeResponse);
+        finalizeResults = finalizePayload.results ?? [];
+        finalizeMessage = finalizePayload.message ?? "";
+        finalizeStatusOk = finalizeResponse.ok;
+      }
+
+      const resultMap = new Map<string, UploadApiResult>();
+      prepareResults.forEach((result) => {
+        if (!result.ok) {
+          resultMap.set(result.clientId, result);
+        }
+      });
+      uploadResults.forEach((result) => {
+        if (!result.ok) {
+          resultMap.set(result.clientId, result);
+        }
+      });
+      finalizeResults.forEach((result) => {
+        resultMap.set(result.clientId, result);
+      });
 
       setFiles((current) =>
         current.map((file) => {
@@ -210,6 +335,7 @@ export function CallDataUploadPanel() {
               status: "Queued for analysis",
               callId: result.callId,
               storagePath: result.storagePath,
+              failureReason: undefined,
               errorMessage: undefined
             };
           }
@@ -217,17 +343,23 @@ export function CallDataUploadPanel() {
           return {
             ...file,
             status: "Upload failed",
+            failureReason: result.reason,
             errorMessage: result.error ?? "Unable to upload this call recording."
           };
         })
       );
 
-      const successCount = results.filter((result) => result.ok).length;
-      const failureCount = results.length - successCount;
+      const successCount = finalizeResults.filter((result) => result.ok).length;
+      const failureCount = filesToUpload.length - successCount;
 
-      if (!response.ok) {
+      if (!prepareResponse.ok && successCount === 0) {
         setFeedbackTone("error");
-        setFeedbackMessage(payload.message ?? "Supabase upload failed.");
+        setFeedbackMessage(
+          preparePayload.message ?? "Supabase upload preparation failed."
+        );
+      } else if (!finalizeStatusOk && successCount === 0 && finalizeMessage) {
+        setFeedbackTone("error");
+        setFeedbackMessage(finalizeMessage);
       } else if (failureCount === 0) {
         setFeedbackTone("success");
         setFeedbackMessage(
@@ -239,20 +371,32 @@ export function CallDataUploadPanel() {
           `${successCount} upload${successCount === 1 ? "" : "s"} completed and ${failureCount} failed. Review the file list for details.`
         );
       }
-    } catch {
+    } catch (error) {
+      const failure = formatUploadFailure(
+        error instanceof Error
+          ? error.message
+          : "Connection failed before Supabase upload completed."
+      );
+
+      console.error("[call-data-upload-panel] Upload flow failed before completion.", {
+        reason: failure.reason,
+        message: failure.message
+      });
+
       setFiles((current) =>
         current.map((file) =>
           filesToUpload.some((candidate) => candidate.id === file.id)
             ? {
                 ...file,
                 status: "Upload failed",
-                errorMessage: "Connection failed before Supabase upload completed."
+                failureReason: failure.reason,
+                errorMessage: failure.message
               }
             : file
         )
       );
       setFeedbackTone("error");
-      setFeedbackMessage("Unable to upload call recordings to Supabase at this time.");
+      setFeedbackMessage(failure.message);
     } finally {
       setIsSubmitting(false);
     }
