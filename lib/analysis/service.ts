@@ -108,7 +108,7 @@ function getConfiguredProvider(): AnalysisProvider | null {
   const value = process.env.ANALYSIS_PROVIDER?.trim().toLowerCase();
 
   if (!value) {
-    return null;
+    return process.env.OPENAI_API_KEY?.trim() ? "openai" : null;
   }
 
   if (value === "openai" || value === "mock") {
