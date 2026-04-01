@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { type CallProviderAdapter, type CallProviderPayload } from "@/providers/types";
 
 export type TwilioCallPayload = {
@@ -10,6 +11,10 @@ export type TwilioCallPayload = {
   CallStatus?: string;
   AnsweredBy?: string;
 };
+
+export type TwilioWebhookValidationResult =
+  | { ok: true }
+  | { ok: false; reason: "missing_auth_token" | "missing_signature" | "invalid_signature" };
 
 function parseDurationSeconds(duration: TwilioCallPayload["CallDuration"]) {
   if (typeof duration === "number" && Number.isFinite(duration)) {
@@ -72,3 +77,73 @@ export const twilioProvider: CallProviderAdapter<TwilioCallPayload> = {
   provider: "twilio",
   mapToCallPayload: mapTwilioPayload
 };
+
+export function parseTwilioWebhookBody(rawBody: string) {
+  const params = new URLSearchParams(rawBody);
+  const parsedPayload: TwilioCallPayload = {};
+  const signatureParams = new Map<string, string[]>();
+
+  for (const [key, value] of params.entries()) {
+    parsedPayload[key as keyof TwilioCallPayload] = value;
+
+    const existingValues = signatureParams.get(key) ?? [];
+    existingValues.push(value);
+    signatureParams.set(key, existingValues);
+  }
+
+  return {
+    parsedPayload,
+    signatureParams
+  };
+}
+
+function buildTwilioSignaturePayload(url: string, params: Map<string, string[]>) {
+  const sortedEntries = [...params.entries()].sort(([leftKey], [rightKey]) =>
+    leftKey.localeCompare(rightKey)
+  );
+
+  let signaturePayload = url;
+
+  for (const [key, values] of sortedEntries) {
+    for (const value of values) {
+      signaturePayload += `${key}${value}`;
+    }
+  }
+
+  return signaturePayload;
+}
+
+export function validateTwilioWebhookSignature({
+  authToken,
+  signature,
+  url,
+  params
+}: {
+  authToken?: string;
+  signature?: string | null;
+  url: string;
+  params: Map<string, string[]>;
+}): TwilioWebhookValidationResult {
+  if (!authToken) {
+    return { ok: false, reason: "missing_auth_token" };
+  }
+
+  if (!signature) {
+    return { ok: false, reason: "missing_signature" };
+  }
+
+  const payload = buildTwilioSignaturePayload(url, params);
+  const expectedSignature = createHmac("sha1", authToken).update(payload, "utf8").digest("base64");
+
+  const expectedBuffer = Buffer.from(expectedSignature);
+  const receivedBuffer = Buffer.from(signature);
+
+  if (
+    expectedBuffer.length !== receivedBuffer.length ||
+    !timingSafeEqual(expectedBuffer, receivedBuffer)
+  ) {
+    return { ok: false, reason: "invalid_signature" };
+  }
+
+  return { ok: true };
+}
