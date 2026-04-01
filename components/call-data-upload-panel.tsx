@@ -441,13 +441,13 @@ export function CallDataUploadPanel() {
   const queuedCount = files.filter((file) => file.status === "Queued for analysis").length;
 
   return (
-    <section className="surface-primary motion-fade-up motion-delay-1 p-6">
+    <section className="surface-primary motion-fade-up motion-delay-1 p-4 sm:p-6">
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
-        className={`cursor-pointer rounded-[12px] border border-dashed px-6 py-10 text-center transition ${
+        className={`cursor-pointer rounded-[12px] border border-dashed px-4 py-8 text-center transition sm:px-6 sm:py-10 ${
           isDragActive
             ? "border-[#2563EB] bg-[#F9FAFB]"
             : "border-[#E5E7EB] bg-transparent hover:border-[#D1D5DB] hover:bg-[#F9FAFB]"
@@ -465,10 +465,10 @@ export function CallDataUploadPanel() {
         <div className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] border border-[#E5E7EB] bg-[#FFFFFF] text-[#111827]">
           <UploadIcon className="h-7 w-7" />
         </div>
-        <h2 className="type-page-title mt-5 text-[24px]">
+        <h2 className="type-page-title mt-5 text-[22px] sm:text-[24px]">
           Upload Call Data
         </h2>
-        <p className="type-body-text mt-2 max-w-[560px] text-[14px]">
+        <p className="type-body-text mx-auto mt-2 max-w-[560px] text-[14px]">
           Drag and drop recent call recordings here, or select multiple files for upload and
           analysis preparation.
         </p>
@@ -508,7 +508,7 @@ export function CallDataUploadPanel() {
             type="button"
             onClick={handleAnalyzeCalls}
             disabled={readyCount === 0 || isSubmitting}
-            className="button-primary-accent inline-flex cursor-pointer items-center justify-center px-4 py-2.5 text-[14px] transition hover:bg-[#1D4ED8] hover:border-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#9CA3AF] disabled:bg-[#9CA3AF]"
+            className="button-primary-accent inline-flex w-full cursor-pointer items-center justify-center px-4 py-2.5 text-[14px] transition hover:bg-[#1D4ED8] hover:border-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#9CA3AF] disabled:bg-[#9CA3AF] sm:w-auto"
           >
             {isSubmitting ? "Uploading..." : "Analyze Calls"}
           </button>
@@ -549,7 +549,7 @@ export function CallDataUploadPanel() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 sm:ml-6">
+                <div className="flex w-full items-center justify-between gap-3 sm:ml-6 sm:w-auto sm:justify-start">
                   <span
                     className={`inline-flex rounded-full border px-3 py-1 text-[12px] font-semibold ${getStatusStyles(
                       file.status
@@ -560,7 +560,7 @@ export function CallDataUploadPanel() {
                   <button
                     type="button"
                     onClick={() => handleRemoveFile(file.id)}
-                    className="button-secondary-ui inline-flex cursor-pointer items-center justify-center px-3 py-2 text-[13px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                    className="button-secondary-ui inline-flex cursor-pointer items-center justify-center whitespace-nowrap px-3 py-2 text-[13px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
                   >
                     <TrashIcon className="mr-1.5 h-4 w-4" />
                     Remove

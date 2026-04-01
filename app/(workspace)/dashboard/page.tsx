@@ -159,7 +159,7 @@ function ReviewQueuePanel({
 
   return (
     <section className="surface-primary motion-fade-up motion-delay-3 overflow-hidden">
-      <div className="border-b border-[#E5E7EB] px-6 py-5">
+      <div className="border-b border-[#E5E7EB] px-4 py-4 sm:px-6 sm:py-5">
         <h3 className="type-section-title text-[18px]">Review Queue</h3>
         <p className="type-body-text mt-1 text-[14px]">
           Pending analyst assignments and due times for unresolved interaction cases.
@@ -167,35 +167,35 @@ function ReviewQueuePanel({
       </div>
 
       <div className="ui-scrollbar ui-scrollbar-x overflow-x-auto">
-        <table className="min-w-full border-separate border-spacing-0 text-left">
+        <table className="min-w-[760px] border-separate border-spacing-0 text-left sm:min-w-[820px]">
           <thead className="bg-[#F9FAFB]">
             <tr className="text-[13px] font-medium uppercase tracking-[0.05em] text-[#374151]">
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Caller</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Failure Type</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Assigned Owner</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Due By</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5 text-right">Status</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Caller</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Failure Type</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Assigned Owner</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Due By</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 text-right sm:px-5 sm:py-3.5">Status</th>
             </tr>
           </thead>
           <tbody>
             {rows.length > 0 ? (
               rows.map((row) => (
                 <tr key={`queue-${row.id}`} className="hover:bg-[#F3F4F6]">
-                  <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top">
+                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top sm:px-5 sm:py-3.5">
                     <div className="type-section-title text-[15px]">{row.caller}</div>
                     <div className="type-muted-text mt-1 text-[13px]">{row.date}</div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top">
+                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top sm:px-5 sm:py-3.5">
                     <div className="type-section-title text-[14px]">{row.reason}</div>
                     <div className="type-body-text mt-1 text-[13px]">{row.issue}</div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top text-[14px] font-medium text-[#111827]">
+                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top text-[14px] font-medium text-[#111827] sm:px-5 sm:py-3.5">
                     {row.assignedOwner}
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top text-[14px] font-medium text-[#111827]">
+                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top text-[14px] font-medium text-[#111827] sm:px-5 sm:py-3.5">
                     {row.dueBy}
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top text-right">
+                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top text-right sm:px-5 sm:py-3.5">
                     <span
                       className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${statusClasses[row.statusTone]}`}
                     >
@@ -206,7 +206,7 @@ function ReviewQueuePanel({
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="type-body-text px-6 py-10 text-center text-[15px]">
+                <td colSpan={5} className="type-body-text px-4 py-8 text-center text-[15px] sm:px-6 sm:py-10">
                   No unresolved cases are currently queued for analyst action.
                 </td>
               </tr>
@@ -267,7 +267,7 @@ function ResolutionOutcomesPanel({
             <div className="type-label-text text-[12px]">
               {item.label}
             </div>
-            <div className="type-metric-text mt-2 text-[36px]">
+            <div className="type-metric-text mt-2 text-[32px] sm:text-[36px]">
               {item.value}
             </div>
             <p className="type-body-text mt-2 text-[13px]">{item.detail}</p>
@@ -293,9 +293,9 @@ function SettingToggle({
     <button
       type="button"
       onClick={onToggle}
-      className="surface-primary flex w-full cursor-pointer items-center justify-between px-4 py-4 text-left transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+      className="surface-primary flex w-full cursor-pointer flex-col items-start gap-4 px-4 py-4 text-left transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] sm:flex-row sm:items-center sm:justify-between"
     >
-      <div>
+      <div className="min-w-0">
         <div className="type-section-title text-[15px]">{label}</div>
         <div className="type-body-text mt-1 text-[14px]">{description}</div>
       </div>
@@ -390,7 +390,7 @@ function SlideOver({
         role="dialog"
         aria-modal="true"
         aria-label={panelMeta.title}
-        className="absolute right-4 top-4 bottom-4 z-10 flex w-[calc(100%-2rem)] max-w-[390px] flex-col rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] p-5 shadow-[0_24px_70px_rgba(17,24,39,0.12)] sm:right-6 sm:top-6 sm:bottom-6"
+        className="absolute bottom-2 right-2 top-2 z-10 flex w-[calc(100%-1rem)] max-w-[390px] flex-col rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] p-4 shadow-[0_24px_70px_rgba(17,24,39,0.12)] sm:bottom-6 sm:right-6 sm:top-6 sm:p-5"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[#E5E7EB] pb-4">
           <div className="min-w-0">
@@ -410,7 +410,7 @@ function SlideOver({
           </button>
         </div>
 
-        <div className="ui-scrollbar ui-scrollbar-y mt-5 flex-1 space-y-4 overflow-y-auto pr-1">
+        <div className="ui-scrollbar ui-scrollbar-y mt-4 flex-1 space-y-4 overflow-y-auto pr-1 sm:mt-5">
           {panel.type === "call" && selectedRow ? (
             <>
               <div className="surface-secondary p-4">
@@ -421,7 +421,7 @@ function SlideOver({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <DrawerMetric label="Revenue Impact" value={selectedRow.revenueImpact ?? selectedRow.revenue} accent />
                 <DrawerMetric label="Primary Issue" value={selectedRow.primaryIssue ?? selectedRow.reason} />
                 <DrawerMetric label="Action Status" value={getRowActionStatus(selectedRow)} />
@@ -526,7 +526,7 @@ function SlideOver({
 
           {panel.type === "statistics" ? (
             <>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <DrawerMetric label="Analysis Window" value={`${getDateRangeLabel(selectedRange)}`} />
                 <DrawerMetric label="Interaction Queue" value={formatTabLabel(activeTab)} accent />
                 <DrawerMetric label="Estimated Revenue Leakage" value={formatCurrency(totalRevenue)} />
@@ -1221,9 +1221,9 @@ export default function HomePage() {
           onSelectRange={handleRangeChange}
           onCopyLink={handleCopyLink}
         />
-        <div className="mt-6 space-y-4 xl:space-y-5">
+        <div className="mt-5 space-y-4 lg:mt-6 xl:space-y-5">
           <RevenueSummaryCards items={revenueSummaryItems} />
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_340px] xl:items-start 2xl:grid-cols-[minmax(0,1.52fr)_360px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_340px] xl:items-start xl:gap-5 2xl:grid-cols-[minmax(0,1.52fr)_360px]">
             <div className="relative min-w-0 space-y-4 xl:space-y-5">
               <MetricCards metrics={metricCards} />
               <div className="min-w-0">
@@ -1255,7 +1255,7 @@ export default function HomePage() {
                 <RecentActivityPanel items={recentActivityItems} />
               </div>
 
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)] xl:gap-5">
                 <ReviewQueuePanel rows={filteredRows.filter((row) => getRowActionStatus(row) === "Needs Action")} />
                 <ResolutionOutcomesPanel
                   recoveredRevenue={formatCurrency(revenueRecovered)}

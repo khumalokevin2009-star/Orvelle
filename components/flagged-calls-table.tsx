@@ -65,17 +65,17 @@ export function FlaggedCallsTable({
 
   return (
     <section className="surface-primary motion-fade-up motion-delay-2 overflow-hidden">
-      <div className="flex flex-col gap-4 border-b border-[#E5E7EB] px-5 pb-0 pt-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="ui-scrollbar ui-scrollbar-x flex items-end gap-9 overflow-x-auto">
-          <div className="min-w-[280px] pb-3.5">
-            <h2 className="type-section-title whitespace-nowrap text-[20px]">
+      <div className="flex flex-col gap-4 border-b border-[#E5E7EB] px-4 pb-0 pt-4 sm:px-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="ui-scrollbar ui-scrollbar-x flex min-w-full items-end gap-6 overflow-x-auto sm:gap-9">
+          <div className="min-w-[240px] pb-3.5 sm:min-w-[280px]">
+            <h2 className="type-section-title whitespace-nowrap text-[18px] sm:text-[20px]">
               Flagged Call Interactions
             </h2>
             <p className="type-body-text mt-1 text-[14px]">
               Calls requiring review due to conversion failure or response gap
             </p>
           </div>
-          <div className="flex items-end gap-7 text-[15px] font-medium text-[#6B7280]">
+          <div className="flex items-end gap-6 text-[14px] font-medium text-[#6B7280] sm:gap-7 sm:text-[15px]">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -96,15 +96,15 @@ export function FlaggedCallsTable({
       </div>
 
       <div className="ui-scrollbar ui-scrollbar-x overflow-x-auto">
-        <table className="min-w-full border-separate border-spacing-0 text-left">
+        <table className="min-w-[940px] border-separate border-spacing-0 text-left sm:min-w-[1020px]">
           <thead className="bg-[#F9FAFB]">
             <tr className="text-[14px] font-medium text-[#374151]">
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Caller ID</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Call Outcome</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Action Status</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Revenue Impact</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5 text-right">Analyst Note</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5 text-right">Actions</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Caller ID</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Call Outcome</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Action Status</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Revenue Impact</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 text-right sm:px-5 sm:py-3.5">Analyst Note</th>
+              <th className="border-b border-[#E5E7EB] px-4 py-3 text-right sm:px-5 sm:py-3.5">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -135,11 +135,11 @@ export function FlaggedCallsTable({
                       isSelected ? "bg-[#F3F4F6]" : "hover:bg-[#F3F4F6] focus-visible:bg-[#F3F4F6]"
                     }`}
                   >
-                    <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top">
+                    <td className="border-b border-[#E5E7EB] px-4 py-3 align-top sm:px-5 sm:py-3.5">
                       <div className="type-section-title text-[17px]">{row.caller}</div>
                       <div className="type-muted-text mt-1 text-[13px]">{row.time}</div>
                     </td>
-                    <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top">
+                    <td className="border-b border-[#E5E7EB] px-4 py-3 align-top sm:px-5 sm:py-3.5">
                       <div className="space-y-1.5">
                         <div className="type-section-title text-[16px]">
                           {callOutcome}
@@ -149,7 +149,7 @@ export function FlaggedCallsTable({
                         </div>
                       </div>
                     </td>
-                    <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top">
+                    <td className="border-b border-[#E5E7EB] px-4 py-3 align-top sm:px-5 sm:py-3.5">
                       <div className="space-y-1.5">
                         <div
                           className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getActionStatusClasses(row)}`}
@@ -162,7 +162,7 @@ export function FlaggedCallsTable({
                         </div>
                       </div>
                     </td>
-                    <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top">
+                    <td className="border-b border-[#E5E7EB] px-4 py-3 align-top sm:px-5 sm:py-3.5">
                       <div
                         className={`inline-flex rounded-[12px] border px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${getRevenuePanelClasses(
                           row
@@ -178,10 +178,10 @@ export function FlaggedCallsTable({
                         </div>
                       </div>
                     </td>
-                    <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top text-right text-[13px] leading-[22px] text-[#6B7280]">
+                    <td className="border-b border-[#E5E7EB] px-4 py-3 align-top text-right text-[13px] leading-[22px] text-[#6B7280] sm:px-5 sm:py-3.5">
                       <div className="type-body-text text-[13px]">{conciseNote}</div>
                     </td>
-                    <td className="border-b border-[#E5E7EB] px-5 py-3.5 align-top">
+                    <td className="border-b border-[#E5E7EB] px-4 py-3 align-top sm:px-5 sm:py-3.5">
                       <div className="ml-auto flex max-w-[220px] flex-wrap justify-end gap-2">
                         <button
                           type="button"
@@ -189,7 +189,7 @@ export function FlaggedCallsTable({
                             event.stopPropagation();
                             onRecoverCall(row);
                           }}
-                          className="button-primary-accent inline-flex cursor-pointer items-center justify-center px-3 py-2 text-[12px] transition hover:bg-[#1D4ED8] hover:border-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                          className="button-primary-accent inline-flex cursor-pointer items-center justify-center whitespace-nowrap px-3 py-2 text-[12px] transition hover:bg-[#1D4ED8] hover:border-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
                         >
                           Recover Call
                         </button>
@@ -200,7 +200,7 @@ export function FlaggedCallsTable({
                             event.stopPropagation();
                             onAssignFollowUp(row);
                           }}
-                          className="button-secondary-ui inline-flex cursor-pointer items-center justify-center px-3 py-2 text-[12px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
+                          className="button-secondary-ui inline-flex cursor-pointer items-center justify-center whitespace-nowrap px-3 py-2 text-[12px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
                         >
                           Assign Follow-Up
                         </button>
@@ -211,7 +211,7 @@ export function FlaggedCallsTable({
                             event.stopPropagation();
                             onMarkResolved(row);
                           }}
-                          className="button-secondary-ui inline-flex cursor-pointer items-center justify-center px-3 py-2 text-[12px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
+                          className="button-secondary-ui inline-flex cursor-pointer items-center justify-center whitespace-nowrap px-3 py-2 text-[12px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
                         >
                           Mark Resolved
                         </button>
@@ -222,7 +222,7 @@ export function FlaggedCallsTable({
               })
             ) : (
               <tr>
-                <td colSpan={6} className="px-5 py-9 text-center text-[15px] text-[#6B7280]">
+                <td colSpan={6} className="px-4 py-8 text-center text-[15px] text-[#6B7280] sm:px-5 sm:py-9">
                   {emptyMessage}
                 </td>
               </tr>

@@ -92,9 +92,9 @@ export function DashboardHeader({
   }, [isOpen]);
 
   return (
-    <div className="motion-fade-up relative z-20 flex flex-col gap-5 overflow-visible lg:flex-row lg:items-start lg:justify-between">
+    <div className="motion-fade-up relative z-20 flex flex-col gap-4 overflow-visible sm:gap-5 lg:flex-row lg:items-start lg:justify-between">
       <div className="pt-1">
-        <h1 className="type-page-title text-[30px] sm:text-[32px]">
+        <h1 className="type-page-title text-[28px] sm:text-[32px]">
           Call Performance Overview
         </h1>
         <p className="type-body-text mt-2 max-w-[720px] text-[15px]">
@@ -112,7 +112,7 @@ export function DashboardHeader({
         </div>
       </div>
 
-      <div className="relative z-30 flex items-center gap-3 self-start">
+      <div className="relative z-30 flex w-full flex-wrap items-center justify-between gap-3 self-start sm:w-auto sm:flex-nowrap sm:justify-start">
         <div className="relative z-40" ref={dropdownRef}>
           <button
             ref={triggerRef}
@@ -120,7 +120,7 @@ export function DashboardHeader({
             onClick={() => setIsOpen((open) => !open)}
             aria-expanded={isOpen}
             aria-haspopup="menu"
-            className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-sm font-semibold text-[#111827] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+            className="inline-flex h-11 min-w-[0] cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-sm font-semibold text-[#111827] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] sm:justify-start"
           >
             <CalendarIcon className="h-[18px] w-[18px] text-[#6B7280]" />
             <span>{getDateRangeLabel(selectedRange)}</span>

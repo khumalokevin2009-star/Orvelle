@@ -49,8 +49,8 @@ function RuleCard({
   onToggle: () => void;
 }) {
   return (
-    <section className="surface-primary p-5">
-      <div className="flex items-start justify-between gap-4">
+    <section className="surface-primary p-4 sm:p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="surface-secondary type-label-text inline-flex rounded-full px-3 py-1 text-[11px]">
             {rule.category}
@@ -59,7 +59,7 @@ function RuleCard({
           <p className="type-body-text mt-2 text-[14px]">{rule.description}</p>
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex shrink-0 flex-row items-center justify-between gap-3 sm:flex-col sm:items-end">
           <AutomationToggle checked={rule.enabled} onToggle={onToggle} />
           <span
             className={`rounded-full px-3 py-1 text-[12px] font-semibold ${
@@ -129,15 +129,15 @@ export default function AutomationsPage() {
         description="Configure operational rules for follow-up, escalation, and call review workflows."
       />
 
-      <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_320px] xl:items-start">
+      <div className="mt-5 grid gap-4 lg:mt-6 lg:gap-5 xl:grid-cols-[minmax(0,1.2fr)_320px] xl:items-start">
         <section className="space-y-4">
           {rules.map((rule) => (
             <RuleCard key={rule.id} rule={rule} onToggle={() => handleToggleRule(rule.id)} />
           ))}
         </section>
 
-        <aside className="space-y-5 xl:border-l xl:border-[#E5E7EB] xl:pl-5">
-          <section className="surface-secondary p-5">
+        <aside className="space-y-4 sm:space-y-5 xl:border-l xl:border-[#E5E7EB] xl:pl-5">
+          <section className="surface-secondary p-4 sm:p-5">
             <h3 className="type-section-title text-[18px]">Rule Execution Summary</h3>
             <div className="mt-4 space-y-3 text-[14px] text-[#6B7280]">
               <div className="flex items-center justify-between">
@@ -155,7 +155,7 @@ export default function AutomationsPage() {
             </div>
           </section>
 
-          <section className="surface-secondary p-5">
+          <section className="surface-secondary p-4 sm:p-5">
             <h3 className="type-section-title text-[18px]">Operational Coverage</h3>
             <div className="mt-4 space-y-3">
               {[

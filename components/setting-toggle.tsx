@@ -17,9 +17,9 @@ export function SettingToggle({
     <button
       type="button"
       onClick={onToggle}
-      className="surface-primary flex w-full cursor-pointer items-center justify-between px-4 py-4 text-left transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+      className="surface-primary flex w-full cursor-pointer flex-col items-start gap-4 px-4 py-4 text-left transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] sm:flex-row sm:items-center sm:justify-between"
     >
-      <div>
+      <div className="min-w-0">
         <div className="type-section-title text-[15px]">{label}</div>
         <div className="type-body-text mt-1 text-[14px]">{description}</div>
       </div>

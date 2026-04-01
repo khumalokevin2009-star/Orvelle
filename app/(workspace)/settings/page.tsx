@@ -23,13 +23,13 @@ function SectionCard({
   actions?: React.ReactNode;
 }) {
   return (
-    <section className="surface-primary p-5">
+    <section className="surface-primary p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="type-section-title text-[18px]">{title}</h2>
           <p className="type-body-text mt-2 max-w-[620px] text-[14px]">{description}</p>
         </div>
-        {actions ? <div className="self-start">{actions}</div> : null}
+        {actions ? <div className="w-full self-start sm:w-auto">{actions}</div> : null}
       </div>
       <div className="mt-5">{children}</div>
     </section>
@@ -108,7 +108,7 @@ export default function SettingsPage() {
         description="Manage business profile details, notification behavior, analysis defaults, and user access across the platform."
       />
 
-      <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_360px] xl:items-start">
+      <div className="mt-5 grid gap-4 lg:mt-6 lg:gap-5 xl:grid-cols-[minmax(0,1.15fr)_360px] xl:items-start">
         <section className="space-y-4">
           <SectionCard
             title="Business Profile"
@@ -226,12 +226,12 @@ export default function SettingsPage() {
           </SectionCard>
         </section>
 
-        <aside className="space-y-5 xl:border-l xl:border-[#E5E7EB] xl:pl-5">
+        <aside className="space-y-4 sm:space-y-5 xl:border-l xl:border-[#E5E7EB] xl:pl-5">
           <SectionCard
             title="User Access"
             description="Review user accounts, assigned roles, and access ownership across the platform."
             actions={
-              <div className="flex items-center gap-2">
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                 <span className="inline-flex rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-1 text-[12px] font-medium text-[#6B7280]">
                   Coming soon
                 </span>
@@ -254,7 +254,7 @@ export default function SettingsPage() {
             <div className="space-y-3">
               {userAccessRecords.map((record) => (
                 <div key={record.id} className="surface-secondary px-4 py-4">
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <div className="type-section-title text-[15px]">{record.name}</div>
                       <div className="type-body-text mt-1 text-[13px]">{record.email}</div>
@@ -267,7 +267,7 @@ export default function SettingsPage() {
                       disabled
                       aria-disabled="true"
                       title="User management will be available in a future release"
-                      className={`${disabledUserAccessButtonClassName} px-3 py-2 text-[13px]`}
+                      className={`${disabledUserAccessButtonClassName} self-start px-3 py-2 text-[13px]`}
                     >
                       Manage
                     </button>

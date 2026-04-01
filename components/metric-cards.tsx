@@ -16,12 +16,12 @@ export function MetricCards({ metrics }: { metrics: MetricCardItem[] }) {
     <section className="surface-primary motion-fade-up motion-delay-1 overflow-hidden">
       <div className="grid divide-y divide-[#E5E7EB] lg:grid-cols-3 lg:divide-x lg:divide-y-0">
         {metrics.map((metric, index) => (
-          <div key={index} className="motion-fade-up bg-[#FFFFFF] px-7 py-5" style={{ animationDelay: `${80 + index * 50}ms` }}>
-            <div className="flex min-h-[58px] items-start gap-4">
-              <span className="type-metric-text text-[36px]">{metric.value}</span>
-              {metric.label ? <span className="type-section-title whitespace-pre-line pt-1.5 text-[16px] leading-[1.15]">{metric.label}</span> : null}
+          <div key={index} className="motion-fade-up bg-[#FFFFFF] px-5 py-4 sm:px-7 sm:py-5" style={{ animationDelay: `${80 + index * 50}ms` }}>
+            <div className="flex min-h-[58px] flex-col items-start gap-2 sm:flex-row sm:gap-4">
+              <span className="type-metric-text text-[32px] sm:text-[36px]">{metric.value}</span>
+              {metric.label ? <span className="type-section-title whitespace-pre-line text-[15px] leading-[1.15] sm:pt-1.5 sm:text-[16px]">{metric.label}</span> : null}
             </div>
-            <p className="type-body-text mt-2.5 text-[14px]">{metric.detail}</p>
+            <p className="type-body-text mt-2 text-[13px] sm:mt-2.5 sm:text-[14px]">{metric.detail}</p>
           </div>
         ))}
       </div>
@@ -50,14 +50,14 @@ export function RevenueSummaryCards({
   };
 
   return (
-    <section className="motion-fade-up motion-delay-1 grid gap-4 lg:grid-cols-3">
+    <section className="motion-fade-up motion-delay-1 grid gap-3 sm:gap-4 lg:grid-cols-3">
       {items.map((item) => {
         const tone = toneClasses[item.tone ?? "neutral"];
 
         return (
           <div
             key={item.label}
-            className="surface-primary motion-fade-up px-6 py-5"
+            className="surface-primary motion-fade-up px-5 py-4 sm:px-6 sm:py-5"
             style={{ animationDelay: `${100 + items.indexOf(item) * 55}ms` }}
           >
             <div className="flex items-start justify-between gap-4">
@@ -65,7 +65,7 @@ export function RevenueSummaryCards({
                 <div className="type-label-text text-[12px]">
                   {item.label}
                 </div>
-                <div className={`type-metric-text mt-3 text-[36px] ${tone.value}`}>
+                <div className={`type-metric-text mt-3 text-[32px] sm:text-[36px] ${tone.value}`}>
                   {item.value}
                 </div>
                 <p className="type-body-text mt-2 text-[13px]">{item.detail}</p>

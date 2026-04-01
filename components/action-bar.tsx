@@ -44,7 +44,7 @@ function ActionButton({
       type="button"
       aria-pressed={id === "export" ? undefined : isActive}
       onClick={() => (id === "export" ? onExport() : onOpenPanel(id))}
-      className={`inline-flex h-11 cursor-pointer items-center gap-2 rounded-[12px] border px-4 text-[15px] font-medium transition active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 ${
+      className={`inline-flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-[12px] border px-4 text-[14px] font-medium transition active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 sm:w-auto sm:justify-start sm:text-[15px] ${
         isActive
           ? "border-[#2563EB] bg-[#2563EB] text-white focus-visible:ring-[#2563EB]"
           : "border-[#E5E7EB] bg-[#FFFFFF] text-[#111827] hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:ring-[#2563EB]"
@@ -59,7 +59,7 @@ function ActionButton({
 export function ActionBar({ activePanel, onExport, onOpenPanel }: ActionBarProps) {
   return (
     <div className="motion-fade-up motion-delay-2 flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap">
         {leftActions.map((action) => (
           <ActionButton
             key={action.id}
@@ -70,7 +70,7 @@ export function ActionBar({ activePanel, onExport, onOpenPanel }: ActionBarProps
           />
         ))}
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap">
         {rightActions.map((action) => (
           <ActionButton
             key={action.id}
