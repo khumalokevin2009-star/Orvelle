@@ -6,6 +6,29 @@ import { useRouter } from "next/navigation";
 import { LogoIcon } from "@/components/icons";
 import { createClient } from "@/lib/supabase/client";
 
+function getLoginErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("missing required supabase environment variable") ||
+    normalized.includes("next_public_supabase_url") ||
+    normalized.includes("next_public_supabase_publishable_key")
+  ) {
+    return "Login is temporarily unavailable. Please try again later.";
+  }
+
+  if (
+    normalized.includes("invalid login credentials") ||
+    normalized.includes("invalid email or password") ||
+    normalized.includes("email not confirmed")
+  ) {
+    return "Invalid email or password.";
+  }
+
+  return "Unable to sign in right now. Please try again.";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -31,16 +54,14 @@ export default function LoginPage() {
       });
 
       if (error) {
-        setErrorMessage(error.message || "Invalid email or password.");
+        setErrorMessage(getLoginErrorMessage(error));
         return;
       }
 
       router.replace("/dashboard");
       router.refresh();
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to sign in at this time."
-      );
+      setErrorMessage(getLoginErrorMessage(error));
     } finally {
       setIsPending(false);
     }
