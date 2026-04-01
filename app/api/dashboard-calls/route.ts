@@ -6,14 +6,28 @@ import {
   type SupabaseAnalysisRecord,
   type SupabaseCallRecord
 } from "@/lib/dashboard-calls";
+import { getAuthenticatedUser } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET() {
+  const user = await getAuthenticatedUser();
+
+  if (!user) {
+    return NextResponse.json(
+      {
+        message: "Authentication required."
+      },
+      { status: 401 }
+    );
+  }
+
   let supabase;
 
   try {
     supabase = createAdminClient();
   } catch (error) {
+    console.error("[dashboard-calls] Failed to initialize Supabase admin client.", error);
+
     return NextResponse.json(
       {
         message:
@@ -35,6 +49,8 @@ export async function GET() {
   ]);
 
   if (callsError) {
+    console.error("[dashboard-calls] Supabase calls query failed.", callsError);
+
     return NextResponse.json(
       {
         message: callsError.message || "Unable to load call records from Supabase.",
@@ -45,6 +61,8 @@ export async function GET() {
   }
 
   if (analysesError) {
+    console.error("[dashboard-calls] Supabase analysis query failed.", analysesError);
+
     return NextResponse.json(
       {
         message: analysesError.message || "Unable to load call analysis records from Supabase.",
@@ -60,6 +78,15 @@ export async function GET() {
       return [record.call_id, record] as const;
     })
   );
+
+  console.info("[dashboard-calls] Query completed.", {
+    callsReturned: calls?.length ?? 0,
+    analysesReturned: analyses?.length ?? 0
+  });
+
+  if ((calls?.length ?? 0) === 0) {
+    console.warn("[dashboard-calls] Supabase returned zero call rows. Dashboard will render the empty state.");
+  }
 
   return NextResponse.json({
     rows: (calls ?? []).map((call) =>

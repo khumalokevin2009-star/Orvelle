@@ -1,22 +1,49 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
+import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogoIcon } from "@/components/icons";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [email, setEmail] = useState("analyst@revenueops.io");
-  const [password, setPassword] = useState("password");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isPending, setIsPending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    startTransition(() => {
-      router.push("/dashboard");
-    });
+    if (isPending) {
+      return;
+    }
+
+    setIsPending(true);
+    setErrorMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password
+      });
+
+      if (error) {
+        setErrorMessage(error.message || "Invalid email or password.");
+        return;
+      }
+
+      router.replace("/dashboard");
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to sign in at this time."
+      );
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (
@@ -84,6 +111,15 @@ export default function LoginPage() {
                   autoComplete="current-password"
                 />
               </label>
+
+              {errorMessage ? (
+                <div
+                  aria-live="polite"
+                  className="rounded-[12px] border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-[14px] text-[#B91C1C]"
+                >
+                  {errorMessage}
+                </div>
+              ) : null}
 
               <button
                 type="submit"

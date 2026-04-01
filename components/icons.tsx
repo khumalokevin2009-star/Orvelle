@@ -218,6 +218,16 @@ export function BoltIcon(props: IconProps) {
   );
 }
 
+export function LogoutIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true" {...props}>
+      <path d="M8 4.5H6.2A1.7 1.7 0 0 0 4.5 6.2v7.6A1.7 1.7 0 0 0 6.2 15.5H8" strokeLinecap="round" />
+      <path d="M10.2 6.3 13.8 10l-3.6 3.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7.5 10h6.1" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function StatsIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true" {...props}>

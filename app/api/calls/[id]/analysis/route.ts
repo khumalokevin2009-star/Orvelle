@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { analyzeTranscript } from "@/lib/analysis/service";
 import { buildCallRecordView, type AnalysisRecord, type TranscriptRecord } from "@/lib/call-detail";
@@ -22,6 +23,17 @@ export async function POST(
   }
 ) {
   const { id } = await context.params;
+  const user = await getAuthenticatedUser();
+
+  if (!user) {
+    return NextResponse.json(
+      {
+        message: "Authentication required."
+      },
+      { status: 401 }
+    );
+  }
+
   let supabase;
 
   try {

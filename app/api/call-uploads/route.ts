@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ACCEPTED_AUDIO_EXTENSIONS,
@@ -284,6 +285,18 @@ async function handleFinalizeUploads(
 }
 
 export async function POST(request: Request) {
+  const user = await getAuthenticatedUser();
+
+  if (!user) {
+    return NextResponse.json(
+      {
+        message: "Authentication required.",
+        results: []
+      },
+      { status: 401 }
+    );
+  }
+
   let supabase;
 
   try {
