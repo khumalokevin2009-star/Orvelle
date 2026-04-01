@@ -67,8 +67,8 @@ export function DashboardShell({ children }: DashboardShellProps) {
 
   return (
     <div className="min-h-screen bg-[#F3F4F6] px-3 py-4 sm:px-6 sm:py-8 xl:px-9">
-      <div className="motion-fade-in mx-auto flex w-full max-w-[1460px] flex-col overflow-visible rounded-[24px] border border-[#E5E7EB] bg-[#FFFFFF] shadow-[0_12px_32px_rgba(17,24,39,0.06)] md:flex-row md:overflow-hidden md:rounded-[30px]">
-        <div className="flex items-center justify-between border-b border-[#E5E7EB] bg-[#FFFFFF] px-4 py-4 md:hidden">
+      <div className="motion-fade-in mx-auto flex w-full max-w-[1460px] flex-col overflow-visible rounded-[24px] border border-[#E5E7EB] bg-[#FFFFFF] shadow-[0_12px_32px_rgba(17,24,39,0.06)] lg:flex-row lg:overflow-hidden lg:rounded-[30px]">
+        <div className="flex items-center justify-between border-b border-[#E5E7EB] bg-[#FFFFFF] px-4 py-4 lg:hidden">
           <Link
             href="/dashboard"
             className="flex min-w-0 items-center gap-3 rounded-[14px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
@@ -95,7 +95,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
           </button>
         </div>
 
-        <aside className="hidden w-[88px] shrink-0 flex-col items-center justify-between border-r border-[#E5E7EB] bg-[#FFFFFF] px-4 py-8 md:flex md:w-[92px] xl:w-[96px]">
+        <aside className="hidden w-[88px] shrink-0 flex-col items-center justify-between border-r border-[#E5E7EB] bg-[#FFFFFF] px-4 py-8 lg:flex lg:w-[92px] xl:w-[96px]">
           <div className="flex w-full flex-col items-center gap-10">
             <Link
               href="/dashboard"
@@ -140,12 +140,12 @@ export function DashboardShell({ children }: DashboardShellProps) {
           </button>
         </aside>
 
-        <div className="min-w-0 flex-1 px-4 py-5 pb-24 sm:px-6 sm:py-7 sm:pb-24 md:px-8 md:py-8 md:pb-8 lg:px-10 xl:px-12 xl:py-9">
+        <div className="min-w-0 flex-1 px-4 py-5 pb-24 sm:px-6 sm:py-7 sm:pb-24 lg:px-8 lg:py-8 lg:pb-8 xl:px-12 xl:py-9">
           {children}
         </div>
       </div>
 
-      <nav className="fixed inset-x-3 bottom-3 z-40 md:hidden">
+      <nav className="fixed inset-x-3 bottom-3 z-40 lg:hidden">
         <div className="grid grid-cols-4 gap-1 rounded-[20px] border border-[#E5E7EB] bg-[rgba(255,255,255,0.94)] p-1.5 shadow-[0_20px_40px_rgba(17,24,39,0.12)] backdrop-blur-[18px]">
           {navItems.map(({ href, icon: Icon, label, mobileLabel, matches }) => {
             const isActive = matches(pathname);
