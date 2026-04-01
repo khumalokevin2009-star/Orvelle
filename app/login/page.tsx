@@ -20,19 +20,19 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F3F4F6] px-4 py-8 sm:px-6 lg:px-8">
+    <main className="relative min-h-screen bg-[#F3F4F6] px-4 py-8 sm:px-6 lg:px-8">
+      <div className="absolute left-4 top-4 z-10 sm:left-6 sm:top-6 lg:left-8 lg:top-8">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3 py-2 text-[14px] font-medium text-[#6B7280] no-underline shadow-[0_1px_2px_rgba(17,24,39,0.04)] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:text-[#111827] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+        >
+          <span aria-hidden="true">←</span>
+          <span>Back to homepage</span>
+        </Link>
+      </div>
+
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-[1180px] items-center justify-center">
         <div className="w-full max-w-[480px]">
-          <div className="mb-4 flex justify-start">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3 py-2 text-[14px] font-medium text-[#6B7280] no-underline shadow-[0_1px_2px_rgba(17,24,39,0.04)] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:text-[#111827] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
-            >
-              <span aria-hidden="true">←</span>
-              <span>Back to homepage</span>
-            </Link>
-          </div>
-
           <section className="surface-primary w-full px-8 py-9 shadow-[0_18px_55px_rgba(17,24,39,0.08)] sm:px-10 sm:py-11">
             <div className="surface-secondary inline-flex h-14 w-14 items-center justify-center">
               <LogoIcon className="h-10 w-10" />
