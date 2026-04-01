@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth/session";
+import { buildCallInsertFromProviderPayload } from "@/lib/call-ingestion";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ACCEPTED_AUDIO_EXTENSIONS,
@@ -10,6 +11,7 @@ import {
   getAudioMimeType,
   isSupportedAudioFile
 } from "@/lib/call-uploads";
+import { type CallProviderPayload } from "@/providers/types";
 
 const defaultCallerName = "Unknown Caller";
 const defaultCallerPhone = "Phone number placeholder";
@@ -28,6 +30,18 @@ type FinalizeUploadFile = {
   fileName: string;
   storagePath: string;
 };
+
+function buildManualUploadProviderPayload(upload: FinalizeUploadFile): CallProviderPayload {
+  return {
+    phone_number: defaultCallerPhone,
+    timestamp: new Date().toISOString(),
+    duration: 0,
+    answered: true,
+    recording_url: `${CALL_RECORDINGS_BUCKET}/${upload.storagePath}`,
+    external_call_id: `manual-upload:${upload.storagePath}`,
+    provider: defaultSourceSystem
+  };
+}
 
 function sanitizeFileName(fileName: string) {
   return fileName
@@ -211,23 +225,16 @@ async function handleFinalizeUploads(
       }
 
       try {
-        const startedAt = new Date().toISOString();
+        const providerPayload = buildManualUploadProviderPayload(upload);
         const { data: insertedCall, error: insertError } = await supabase
           .from("calls")
-          .insert({
-            caller_name: defaultCallerName,
-            caller_phone: defaultCallerPhone,
-            direction: "inbound",
-            started_at: startedAt,
-            ended_at: null,
-            audio_url: `${CALL_RECORDINGS_BUCKET}/${upload.storagePath}`,
-            recording_filename: upload.fileName,
-            source_system: defaultSourceSystem,
-            assigned_owner: defaultAssignedOwner,
-            status: "action_required",
-            revenue_estimate: 0,
-            currency_code: "GBP"
-          })
+          .insert(
+            buildCallInsertFromProviderPayload(providerPayload, {
+              callerName: defaultCallerName,
+              assignedOwner: defaultAssignedOwner,
+              recordingFileName: upload.fileName
+            })
+          )
           .select("id")
           .single();
 
