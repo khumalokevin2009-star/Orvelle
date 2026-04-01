@@ -2,16 +2,16 @@ import type { Metadata } from "next";
 import { LandingPage } from "@/components/landing-page";
 
 export const metadata: Metadata = {
-  title: "Orvelle | Connect Call Systems and Recover Lost Revenue",
+  title: "Orvelle | Call Intelligence and Revenue Recovery Platform",
   description:
-    "Orvelle helps service businesses identify high-intent calls that didn’t convert, surface missed revenue opportunities, and recover more jobs from existing call activity.",
+    "Orvelle connects call systems, recordings, and workflows so service businesses can detect lost revenue, prioritise callbacks, and operationalise call intelligence.",
   alternates: {
     canonical: "https://orvellehq.com"
   },
   openGraph: {
-    title: "Orvelle | Connect Call Systems and Recover Lost Revenue",
+    title: "Orvelle | Call Intelligence and Revenue Recovery Platform",
     description:
-      "Orvelle helps service businesses identify high-intent calls that didn’t convert, surface missed revenue opportunities, and recover more jobs from existing call activity.",
+      "Orvelle connects call systems, recordings, and workflows so service businesses can detect lost revenue, prioritise callbacks, and operationalise call intelligence.",
     url: "https://orvellehq.com",
     images: [
       {
@@ -24,9 +24,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Orvelle | Connect Call Systems and Recover Lost Revenue",
+    title: "Orvelle | Call Intelligence and Revenue Recovery Platform",
     description:
-      "Orvelle helps service businesses identify high-intent calls that didn’t convert, surface missed revenue opportunities, and recover more jobs from existing call activity.",
+      "Orvelle connects call systems, recordings, and workflows so service businesses can detect lost revenue, prioritise callbacks, and operationalise call intelligence.",
     images: ["/landing/dashboard-preview-final.png"]
   }
 };

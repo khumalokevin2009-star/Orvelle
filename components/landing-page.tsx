@@ -54,77 +54,77 @@ const landingThemeStyles: Record<Theme, ThemeVars> = {
 
 const problemCards = [
   {
-    title: "Missed follow-up loses live demand",
+    title: "Call data lives in too many systems",
     description:
-      "By the time someone reviews the missed call later, the customer has often already booked elsewhere."
+      "Recordings, call logs, outcomes, and follow-up notes are usually spread across tools that do not talk to each other."
   },
   {
-    title: "Mishandled calls hide revenue loss",
+    title: "Teams cannot see which missed calls mattered",
     description:
-      "The phone may have rung, but poor handling, weak follow-up, or missed context can still cost the job."
+      "Without one operational view, high-intent calls and low-priority callbacks end up sitting in the same backlog."
   },
   {
-    title: "Unprioritised callbacks bury opportunity",
+    title: "Revenue loss stays invisible too long",
     description:
-      "Without a clear recovery queue, valuable callbacks sit in the same backlog as low-value admin noise."
+      "By the time someone spots the issue in reporting, the customer has already moved on and the job is gone."
   }
 ] as const;
 
 const solutionBullets = [
-  "which calls likely should have converted",
-  "where revenue was missed",
-  "who to call back first",
-  "what action should happen next"
+  "connect call systems and recordings",
+  "identify which calls likely should have converted",
+  "quantify where revenue was missed",
+  "route the next best action into the team’s workflow"
 ] as const;
 
 const solutionCards = [
   {
-    title: "See which calls should have converted",
+    title: "Unify call signals",
     description:
-      "Flag high-intent calls that stalled, failed, or never received the follow-up they needed.",
+      "Bring call logs, recordings, and outcome signals into one operational layer.",
     icon: SearchFlagIcon
   },
   {
-    title: "Measure where revenue was missed",
+    title: "Detect lost revenue",
     description:
-      "Quantify the booking value tied to each missed opportunity so the team knows what matters first.",
+      "Highlight the conversations and missed callbacks most likely tied to lost jobs.",
     icon: StatsIcon
   },
   {
-    title: "Route the next best action",
+    title: "Drive recovery action",
     description:
-      "Give the team a clear recovery queue with the follow-up action that should happen next.",
+      "Push the right follow-up priority into the team’s queue instead of another passive report.",
     icon: BoltIcon
   }
 ] as const;
 
 const workflowSteps = [
   {
-    title: "Connect or upload call data",
-    description: "Bring in recordings, call logs, or integrated call system data.",
+    title: "Connect call systems and sources",
+    description: "Bring in call logs, recordings, exports, or integrated telephony data.",
     icon: UploadIcon
   },
   {
-    title: "Identify lost revenue opportunities",
-    description: "Orvelle analyses call activity and surfaces calls that likely should have converted.",
+    title: "Normalise call activity and outcomes",
+    description: "Orvelle structures call history, outcomes, and recordings into one usable operational layer.",
     icon: SearchFlagIcon
   },
   {
-    title: "Act on the highest-value opportunities",
-    description: "Your team gets a clear view of who to follow up with first and where revenue is being lost.",
+    title: "Detect lost revenue and priority follow-up",
+    description: "The platform surfaces high-intent calls that likely should have converted and shows where revenue was missed.",
     icon: BoltIcon
   },
   {
-    title: "Scale into automated recovery workflows",
-    description: "Evolve from visibility into automation with ingestion, alerts, and recovery actions.",
+    title: "Push action into recovery workflows",
+    description: "Teams can work from a clear callback queue today and scale into more automated workflows over time.",
     icon: StatsIcon
   }
 ] as const;
 
 const credibilityItems = [
-  "Built for call-driven businesses that can’t afford to miss revenue",
-  "Start with existing call data, then scale into ingestion and recovery workflows",
-  "Designed to support secure access and operational reliability"
+  "Built for service businesses that depend on inbound calls to win work",
+  "Connects call activity, recordings, and follow-up operations into one platform layer",
+  "Designed for controlled access, structured workflows, and integration scale"
 ] as const;
 
 const integrations = [
@@ -532,24 +532,24 @@ function HeroVisual({ theme }: { theme: Theme }) {
     <div className="landing-proof-frame surface-primary relative overflow-hidden p-4 sm:p-5" style={{ boxShadow: "var(--landing-shadow)" }}>
       <div className="grid gap-3 sm:grid-cols-[1.2fr_0.9fr]">
         <div className="surface-secondary p-4">
-          <SectionEyebrow>Live revenue snapshot</SectionEyebrow>
+          <SectionEyebrow>Call intelligence snapshot</SectionEyebrow>
           <div className="type-metric-text mt-3 text-[38px]">{formatCurrency(1120)}</div>
           <p className="type-body-text mt-2 text-[14px]">
-            Revenue currently sitting in calls that should still be recovered this week.
+            Example revenue at risk surfaced across missed callbacks, failed conversions, and unresolved call outcomes.
           </p>
         </div>
 
         <div className="grid gap-3">
           <div className="surface-secondary p-4">
-            <div className="type-section-title text-[15px]">4 high-intent calls need action</div>
+            <div className="type-section-title text-[15px]">Connected call signals</div>
             <p className="type-body-text mt-2 text-[13px]">
-              Prioritized by likely booking value and urgency.
+              Recordings, call logs, and outcome signals normalised into one operational view.
             </p>
           </div>
           <div className="surface-secondary p-4">
-            <div className="type-section-title text-[15px]">{formatCurrency(800)} recovered</div>
+            <div className="type-section-title text-[15px]">Priority recovery workflows</div>
             <p className="type-body-text mt-2 text-[13px]">
-              Example account win-back from the same 30-day window.
+              Teams see who to call back first and what action should happen next.
             </p>
           </div>
         </div>
@@ -557,14 +557,14 @@ function HeroVisual({ theme }: { theme: Theme }) {
 
       <div className="relative mt-5 overflow-hidden rounded-[20px] border border-[var(--border-subtle)] bg-[var(--surface-secondary)] p-2">
         <div className="absolute left-4 top-4 z-10 hidden rounded-full border border-[var(--border-subtle)] bg-[var(--surface-primary)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)] shadow-sm md:block">
-          Revenue at risk: {formatCurrency(1120)}
+          At-risk revenue surfaced: {formatCurrency(1120)}
         </div>
         <div className="absolute bottom-4 left-4 z-10 hidden rounded-full border border-[var(--border-subtle)] bg-[var(--surface-primary)] px-3 py-2 text-[12px] font-medium text-[var(--text-primary)] shadow-sm md:block">
-          Recovery queue ready for follow-up
+          Priority queue ready for follow-up
         </div>
         <img
           src={SCREENSHOT_SRC}
-          alt="Dashboard preview showing revenue at risk, recovery metrics, and a call recovery queue."
+          alt="Dashboard preview showing call intelligence, revenue at risk, recovery metrics, and a follow-up queue."
           className={`block w-full rounded-[16px] border border-[var(--border-subtle)] ${
             theme === "dark" ? "opacity-[0.96]" : ""
           }`}
@@ -659,11 +659,11 @@ function ProofSection({
         <div className="max-w-[760px]">
           <SectionEyebrow>Product proof</SectionEyebrow>
           <h2 className="type-page-title mt-4 text-[34px] sm:text-[44px]">
-            See where revenue slipped through.
+            One operational view for call intelligence, missed revenue, and next action.
           </h2>
           <p className="type-body-text mt-5 max-w-[700px] text-[17px]">
-            Track missed opportunities, unconverted high-intent calls, recovery rate, and priority callbacks in one
-            operational view.
+            See missed opportunities, unconverted high-intent calls, recovery rate, and the live follow-up queue in
+            one platform view.
           </p>
         </div>
 
@@ -673,13 +673,13 @@ function ProofSection({
             style={{ boxShadow: "var(--landing-shadow)" }}
           >
             <div className="mb-5 flex flex-col gap-3 border-b border-[var(--border-subtle)] pb-5 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="type-section-title text-[20px]">Dashboard preview</div>
-                <p className="type-body-text mt-2 text-[14px]">
-                  The highlighted proof image shows where revenue is at risk, how recovery is improving, and where the
-                  live queue starts.
-                </p>
-              </div>
+                <div>
+                  <div className="type-section-title text-[20px]">Dashboard preview</div>
+                  <p className="type-body-text mt-2 text-[14px]">
+                    Example call intelligence workspace combining missed revenue, recovery metrics, and live follow-up
+                    queues.
+                  </p>
+                </div>
               <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-secondary)] px-3 py-2 text-[12px] font-medium text-[var(--text-label)]">
                 Example 30-day account snapshot
               </div>
@@ -1113,10 +1113,25 @@ export function LandingPage() {
             <OrvelleWordmark theme={theme} priority />
           </Link>
 
+          <nav className="hidden items-center gap-6 lg:flex">
+            <a href="#product" className="text-[14px] font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] no-underline">
+              Product
+            </a>
+            <a href="#integrations" className="text-[14px] font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] no-underline">
+              Integrations
+            </a>
+            <a href="#how-it-works" className="text-[14px] font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] no-underline">
+              How it Works
+            </a>
+            <a href="#security" className="text-[14px] font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] no-underline">
+              Security
+            </a>
+          </nav>
+
           <div className="flex items-center gap-3">
             <ThemeToggle theme={theme} onToggle={() => setTheme((current) => (current === "light" ? "dark" : "light"))} />
             <Link href="/login" className="hidden text-[14px] font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] md:inline-flex">
-              Platform Login
+              Login
             </Link>
             <button
               type="button"
@@ -1135,13 +1150,13 @@ export function LandingPage() {
             <div className="mx-auto max-w-[1240px] px-4 py-20 sm:px-6 sm:py-24 lg:px-8 lg:py-28">
               <div className="grid gap-14 lg:grid-cols-[minmax(0,1.02fr)_minmax(520px,0.98fr)] lg:items-center">
                 <div>
-                  <SectionEyebrow>Revenue intelligence for service businesses</SectionEyebrow>
+                  <SectionEyebrow>Call intelligence platform</SectionEyebrow>
                   <h1 className="type-page-title mt-5 max-w-[760px] text-[44px] sm:text-[58px] lg:text-[64px]">
-                    Connect your call systems. Recover lost revenue automatically.
+                    Connect your call systems. Turn call activity into revenue intelligence.
                   </h1>
                   <p className="type-body-text mt-6 max-w-[690px] text-[18px]">
-                    Orvelle helps service businesses identify high-intent calls that didn’t convert, surface missed
-                    revenue opportunities, and show exactly what action to take next.
+                    Orvelle connects call systems, recordings, and operational workflows so service businesses can see
+                    which calls likely should have converted, where revenue was lost, and what the team should do next.
                   </p>
 
                   <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -1161,7 +1176,7 @@ export function LandingPage() {
                   </div>
 
                   <p className="type-body-text mt-5 text-[14px]">
-                    Built for call-driven businesses that can’t afford to miss revenue.
+                    Built for service businesses that rely on inbound calls to win revenue.
                   </p>
 
                   <div className="mt-8 grid gap-3 sm:grid-cols-3">
@@ -1207,12 +1222,12 @@ export function LandingPage() {
               <div className="max-w-[520px]">
                 <SectionEyebrow>The problem</SectionEyebrow>
                 <h2 className="type-page-title mt-4 text-[34px] sm:text-[44px]">
-                  Missed calls aren’t the only problem. Missed revenue is.
+                  Disconnected call systems create blind spots, not just missed calls.
                 </h2>
                 <p className="type-body-text mt-5 text-[17px]">
-                  Most businesses don’t lose revenue because the phone never rang. They lose it because high-intent
-                  calls were missed, mishandled, never followed up, or never prioritised properly. By the time anyone
-                  notices, the customer has already moved on.
+                  Most teams do not lack call volume. They lack one operational view across call systems, recordings,
+                  outcomes, and follow-up workflows. That is why high-intent calls get missed, mishandled, or left in
+                  the wrong queue until the revenue is already gone.
                 </p>
                 <div className="surface-primary mt-6 p-5" style={{ boxShadow: "var(--landing-panel-shadow)" }}>
                   <div className="type-label-text text-[11px]">Estimated impact</div>
@@ -1234,16 +1249,16 @@ export function LandingPage() {
           </div>
         </LandingSection>
 
-        <LandingSection prefersReducedMotion={prefersReducedMotion} className="border-b border-[var(--border-subtle)]">
+        <LandingSection id="product" prefersReducedMotion={prefersReducedMotion} className="border-b border-[var(--border-subtle)]">
           <div className="mx-auto max-w-[1240px] px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
             <div className="max-w-[720px]">
               <SectionEyebrow>The solution</SectionEyebrow>
               <h2 className="type-page-title mt-4 text-[34px] sm:text-[44px]">
-                Orvelle turns call activity into revenue intelligence.
+                Orvelle turns fragmented call activity into operational intelligence.
               </h2>
               <p className="type-body-text mt-5 text-[17px]">
-                Orvelle connects with your call workflows, analyses recorded conversations and call outcomes, and
-                highlights where revenue was lost.
+                Instead of treating call analysis as a one-off task, Orvelle connects call records, recordings,
+                outcomes, and recovery workflows into one platform layer.
               </p>
             </div>
 
@@ -1277,19 +1292,21 @@ export function LandingPage() {
           </div>
         </LandingSection>
 
-        <LandingSection prefersReducedMotion={prefersReducedMotion} className="border-b border-[var(--border-subtle)]">
+        <LandingSection id="integrations" prefersReducedMotion={prefersReducedMotion} className="border-b border-[var(--border-subtle)]">
           <div className="mx-auto max-w-[1240px] px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
             <div className="grid gap-10 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:items-start">
               <div className="max-w-[560px]">
                 <SectionEyebrow>Integrations</SectionEyebrow>
                 <h2 className="type-page-title mt-4 text-[34px] sm:text-[44px]">
-                  Designed to fit into your existing call stack.
+                  Designed to fit into the call stack you already use.
                 </h2>
                 <p className="type-body-text mt-5 text-[17px]">
-                  Orvelle is built to work with the systems service businesses already rely on.
+                  Orvelle is built to sit alongside the systems service businesses already rely on for call handling,
+                  recordings, routing, and follow-up.
                 </p>
                 <p className="type-body-text mt-5 text-[15px]">
-                  Start with your existing call data. Scale into automated ingestion and recovery workflows.
+                  Start with exports and recordings. Scale into direct integrations, automated ingestion, and recovery
+                  workflows.
                 </p>
               </div>
 
@@ -1314,8 +1331,8 @@ export function LandingPage() {
           prefersReducedMotion={prefersReducedMotion}
           side="left"
           eyebrow="Benefit 01"
-          title="Revenue at risk is visible immediately, not after the month is gone."
-          copy="Instead of guessing where bookings were lost, leaders get a clear money view: what is still recoverable, what has already been won back, and what the team should tackle before the opportunity cools."
+          title="See which call activity likely cost the business real revenue."
+          copy="Orvelle surfaces at-risk revenue, recovered revenue, and the calls still waiting on action so operators know exactly where revenue slipped through."
           visual={
             <div className="surface-primary p-5" style={{ boxShadow: "var(--landing-shadow)" }}>
               <div className="grid gap-3 sm:grid-cols-3">
@@ -1354,8 +1371,8 @@ export function LandingPage() {
           prefersReducedMotion={prefersReducedMotion}
           side="right"
           eyebrow="Benefit 02"
-          title="Give the team a recovery queue that feels operational, not theoretical."
-          copy="Every missed opportunity comes back with a value estimate, action status, and next step. That keeps the sales or front-desk team focused on revenue recovery instead of reading notes and guessing priorities."
+          title="Give teams a recovery queue built from real call intelligence."
+          copy="Every flagged call comes back with context, estimated value, and the next action, so callbacks are prioritised like revenue work, not admin."
           visual={
             <div className="surface-primary overflow-hidden p-0" style={{ boxShadow: "var(--landing-shadow)" }}>
               <div className="border-b border-[var(--border-subtle)] px-5 py-4">
@@ -1409,8 +1426,8 @@ export function LandingPage() {
           prefersReducedMotion={prefersReducedMotion}
           side="left"
           eyebrow="Benefit 03"
-          title="Track what has been recovered so the ROI is visible to the business."
-          copy="The point is not only finding missed revenue. It is proving that better follow-up wins money back. Leaders can see recovered revenue over time and decide where to keep investing operational effort."
+          title="Move from visibility into integrated recovery workflows."
+          copy="Start with reporting and recovery queues, then scale into alerts, ingestion, and workflow actions that keep revenue opportunities from sitting in backlog."
           visual={
             <div className="surface-primary p-5" style={{ boxShadow: "var(--landing-shadow)" }}>
               <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
@@ -1473,7 +1490,7 @@ export function LandingPage() {
             <div className="max-w-[720px]">
               <SectionEyebrow>How it works</SectionEyebrow>
               <h2 className="type-page-title mt-4 text-[34px] sm:text-[44px]">
-                From call data to recovery action.
+                From connected call data to recovery action.
               </h2>
             </div>
 
@@ -1504,12 +1521,12 @@ export function LandingPage() {
               <div className="max-w-[560px]">
                 <SectionEyebrow>ROI</SectionEyebrow>
                 <h2 className="type-page-title mt-4 text-[34px] sm:text-[44px]">
-                  Recover one missed job and the platform can pay for itself.
+                  Turn call intelligence into recovered jobs, not more reporting.
                 </h2>
                 <p className="type-body-text mt-5 text-[17px]">
-                  For service businesses, a single lost call can mean hundreds or thousands in missed revenue. Orvelle
-                  helps your team focus on the calls that matter most, so missed opportunities don’t silently become
-                  lost jobs.
+                  For service businesses, a missed call is often a missed booking. Orvelle helps teams focus on the
+                  highest-value revenue opportunities first, so follow-up becomes an operational system rather than an
+                  ad hoc task.
                 </p>
               </div>
 
@@ -1538,17 +1555,17 @@ export function LandingPage() {
           </div>
         </LandingSection>
 
-        <LandingSection prefersReducedMotion={prefersReducedMotion} className="border-b border-[var(--border-subtle)]">
+        <LandingSection id="security" prefersReducedMotion={prefersReducedMotion} className="border-b border-[var(--border-subtle)]">
           <div className="mx-auto max-w-[1240px] px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
             <div className="grid gap-10 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:items-start">
               <div className="max-w-[560px]">
-                <SectionEyebrow>Reliability</SectionEyebrow>
+                <SectionEyebrow>Security</SectionEyebrow>
                 <h2 className="type-page-title mt-4 text-[34px] sm:text-[44px]">
-                  Built for operational reliability.
+                  Operationally reliable. Built for controlled access.
                 </h2>
                 <p className="type-body-text mt-5 text-[17px]">
-                  Orvelle is designed to support secure ingestion, controlled access, and scalable analysis workflows
-                  for businesses that depend on phone-driven revenue.
+                  Orvelle is designed to support secure ingestion, controlled internal access, and scalable analysis
+                  workflows as the platform expands across systems.
                 </p>
               </div>
 
@@ -1574,11 +1591,11 @@ export function LandingPage() {
                 <div>
                   <SectionEyebrow>Request a demo</SectionEyebrow>
                   <h2 className="type-page-title mt-4 max-w-[720px] text-[36px] sm:text-[48px]">
-                    Stop letting valuable calls disappear into the backlog.
+                    Make missed revenue visible before it disappears.
                   </h2>
                   <p className="type-body-text mt-5 max-w-[640px] text-[17px]">
-                    See how Orvelle can help your business identify missed revenue and recover more jobs from the calls
-                    you’re already getting.
+                    See how Orvelle can connect your call data, surface lost revenue opportunities, and give your team
+                    a clearer recovery workflow.
                   </p>
                 </div>
 
@@ -1606,7 +1623,7 @@ export function LandingPage() {
       <footer className="border-t border-[var(--border-subtle)]">
         <div className="mx-auto flex max-w-[1240px] flex-col gap-3 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <p className="type-body-text text-[13px]">
-            Orvelle helps service businesses connect call systems and recover lost revenue from missed opportunities.
+            Orvelle is a call intelligence and integration platform for service businesses that depend on inbound calls.
           </p>
           <div className="flex items-center gap-4 text-[14px]">
             <Link href="/privacy" className="font-medium text-[var(--text-secondary)] no-underline transition hover:text-[var(--text-primary)]">

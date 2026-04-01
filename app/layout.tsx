@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   applicationName: "Orvelle",
   title: "Orvelle",
   description:
-    "Orvelle helps service businesses identify high-intent calls that didn’t convert, surface missed revenue opportunities, and recover more jobs from existing call activity.",
+    "Orvelle connects call systems, recordings, and workflows so service businesses can detect lost revenue, prioritise callbacks, and operationalise call intelligence.",
   icons: {
     icon: [
       {
@@ -22,9 +22,9 @@ export const metadata: Metadata = {
     type: "website",
     url: "https://orvellehq.com",
     siteName: "Orvelle",
-    title: "Orvelle | Connect Call Systems and Recover Lost Revenue",
+    title: "Orvelle | Call Intelligence and Revenue Recovery Platform",
     description:
-      "Orvelle helps service businesses identify high-intent calls that didn’t convert, surface missed revenue opportunities, and recover more jobs from existing call activity.",
+      "Orvelle connects call systems, recordings, and workflows so service businesses can detect lost revenue, prioritise callbacks, and operationalise call intelligence.",
     images: [
       {
         url: "/landing/dashboard-preview-final.png",
@@ -36,9 +36,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Orvelle | Connect Call Systems and Recover Lost Revenue",
+    title: "Orvelle | Call Intelligence and Revenue Recovery Platform",
     description:
-      "Orvelle helps service businesses identify high-intent calls that didn’t convert, surface missed revenue opportunities, and recover more jobs from existing call activity.",
+      "Orvelle connects call systems, recordings, and workflows so service businesses can detect lost revenue, prioritise callbacks, and operationalise call intelligence.",
     images: ["/landing/dashboard-preview-final.png"]
   }
 };
