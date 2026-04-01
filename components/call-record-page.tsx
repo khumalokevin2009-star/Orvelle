@@ -97,6 +97,36 @@ function getTranscriptTone(speaker: TranscriptEntry["speaker"]) {
   return "border-[#F0E4C9] bg-[#FFF9ED]";
 }
 
+function getOperationalOutcomeTone(statusTone: DashboardCallRow["statusTone"]) {
+  if (statusTone === "recovered") {
+    return "border-[#D9ECDD] bg-[#F3FBF5] text-[#2D7046]";
+  }
+
+  if (statusTone === "pending") {
+    return "border-[#DCE7F8] bg-[#F7FAFF] text-[#355A93]";
+  }
+
+  return "border-[#F2D8D8] bg-[#FFF6F6] text-[#A04C4C]";
+}
+
+function SummaryField({
+  label,
+  value,
+  detail
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+}) {
+  return (
+    <div className="surface-secondary px-4 py-4">
+      <div className="type-label-text text-[11px]">{label}</div>
+      <div className="type-section-title mt-2 text-[17px] leading-6">{value}</div>
+      {detail ? <p className="type-body-text mt-2 text-[13px]">{detail}</p> : null}
+    </div>
+  );
+}
+
 function parseTranscriptEntriesFromText(transcriptText: string): TranscriptEntry[] {
   if (!transcriptText.trim()) {
     return [];
@@ -149,6 +179,11 @@ export function CallRecordPage({
   const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const analysisSummary = detailState.analysisSummary ?? defaultAnalysisSummary;
+  const operationalOutcome = row.callOutcome ?? analysisSummary.callOutcome;
+  const issueIdentified =
+    analysisSummary.primaryIssue !== "Pending classification"
+      ? analysisSummary.primaryIssue
+      : row.primaryIssue ?? row.reason;
 
   function pushNote(note: string) {
     setRow((currentRow) => ({
@@ -335,41 +370,77 @@ export function CallRecordPage({
 
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.32fr)_360px] xl:items-start">
         <div className="space-y-5">
-          <section className="surface-primary p-6">
+          <section className="surface-primary overflow-hidden p-6">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="inline-flex rounded-full border border-[#F3DDAF] bg-[#FFF6E4] px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#9A6A1B]">
-                Conversion Failure Detected
+              <span className="inline-flex rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#374151]">
+                {detailState.subtitle}
               </span>
               <span
-                className={`inline-flex rounded-full px-3 py-1 text-[12px] font-semibold ${
-                  row.statusTone === "critical"
-                    ? "bg-[#FFF1E4] text-[#A35B12]"
-                    : row.statusTone === "pending"
-                      ? "bg-[#EEF4FF] text-[#48679C]"
-                      : "bg-[#EAF7EF] text-[#30734C]"
-                }`}
+                className={`inline-flex rounded-full border px-3 py-1 text-[12px] font-semibold ${getOperationalOutcomeTone(
+                  row.statusTone
+                )}`}
               >
                 {row.status}
               </span>
             </div>
 
-            <p className="type-label-text mt-5 text-[14px]">
-              {detailState.subtitle}
-            </p>
-            <h2 className="type-page-title mt-2 text-[30px]">{row.caller}</h2>
-            <p className="type-body-text mt-3 max-w-[760px] text-[15px]">{row.summary}</p>
+            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_340px]">
+              <div>
+                <h2 className="type-page-title text-[32px] leading-[1.02] sm:text-[36px]">{row.caller}</h2>
+                <p className="type-body-text mt-3 max-w-[820px] text-[15px] leading-7">{row.summary}</p>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <MetaField label="Caller Name" value={row.caller} />
-              <MetaField label="Phone Number" value={row.phone} />
-              <MetaField label="Timestamp" value={row.date} />
-              <MetaField label="Duration" value={detailState.duration} />
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <SummaryField label="Outcome" value={operationalOutcome} detail={row.status} />
+                  <SummaryField
+                    label="Estimated Revenue"
+                    value={row.revenue}
+                    detail="Projected recovery value"
+                  />
+                  <SummaryField
+                    label="Issue Identified"
+                    value={issueIdentified}
+                    detail={row.reason}
+                  />
+                  <SummaryField
+                    label="Timestamp"
+                    value={row.date}
+                    detail={`${row.phone} • ${detailState.duration}`}
+                  />
+                </div>
+              </div>
+
+              <div className="surface-secondary px-5 py-5">
+                <div className="type-label-text text-[11px]">Recommended next action</div>
+                <div className="type-section-title mt-2 text-[22px] leading-8">
+                  {row.nextStep}
+                </div>
+                <p className="type-body-text mt-3 text-[14px] leading-7">{row.recommendedAction}</p>
+
+                <div className="mt-5 flex flex-col gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleResolve}
+                    disabled={row.status === "Resolved"}
+                    className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
+                  >
+                    Mark as Resolved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleScheduleFollowUp}
+                    disabled={row.status === "Resolved"}
+                    className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
+                  >
+                    Schedule Follow-Up
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 
           <CardSection
             title="Transcript"
-            description="Conversation segments extracted from the flagged interaction record."
+            description="Readable conversation record for operational review, issue confirmation, and next-step planning."
           >
             {detailState.transcriptPending ? (
               <div className="surface-secondary px-4 py-4">
@@ -397,19 +468,19 @@ export function CallRecordPage({
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {detailState.transcript.map((entry) => (
                   <div
                     key={`${row.id}-${entry.time}-${entry.speaker}`}
-                    className={`rounded-[12px] border px-4 py-4 ${getTranscriptTone(entry.speaker)}`}
+                    className={`rounded-[14px] border px-5 py-4 ${getTranscriptTone(entry.speaker)}`}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div className="type-label-text text-[13px]">
+                      <div className="type-label-text text-[12px]">
                         {entry.speaker}
                       </div>
                       <div className="type-muted-text text-[12px]">{entry.time}</div>
                     </div>
-                    <p className="type-body-text mt-3 text-[15px] text-[#374151]">{entry.text}</p>
+                    <p className="type-body-text mt-3 text-[15px] leading-7 text-[#374151]">{entry.text}</p>
                   </div>
                 ))}
               </div>
@@ -418,66 +489,80 @@ export function CallRecordPage({
 
           <CardSection
             title="Analysis Summary"
-            description="Structured analysis output highlighting conversion status, missed opportunity risk, and the primary operational outcome."
+            description="Decision-oriented summary of what happened, what it means commercially, and how confident the system is."
           >
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <div className="surface-secondary px-4 py-4">
-                <div className="type-label-text text-[12px]">
-                  Intent Level
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+              <div className="space-y-3">
+                <div className="surface-secondary px-4 py-4">
+                  <div className="type-label-text text-[11px]">Decision Summary</div>
+                  <div className="type-section-title mt-2 text-[18px] leading-7">
+                    {analysisSummary.callOutcome}
+                  </div>
+                  <p className="type-body-text mt-2 text-[14px] leading-7">
+                    {analysisSummary.missedOpportunity === "Detected"
+                      ? "This call should remain in the recovery workflow and be treated as a commercial opportunity requiring follow-up."
+                      : "Current analysis suggests this call does not require revenue recovery escalation."}
+                  </p>
                 </div>
-                <div className="type-section-title mt-2 text-[16px]">
-                  {analysisSummary.intentLevel}
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="surface-secondary px-4 py-4">
+                    <div className="type-label-text text-[11px]">Primary Issue</div>
+                    <div className="type-section-title mt-2 text-[16px] leading-6">
+                      {analysisSummary.primaryIssue}
+                    </div>
+                  </div>
+
+                  <div className="surface-secondary px-4 py-4">
+                    <div className="type-label-text text-[11px]">Intent Level</div>
+                    <div className="type-section-title mt-2 text-[16px]">
+                      {analysisSummary.intentLevel}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className={`rounded-[12px] border px-4 py-4 ${getSummaryToneClasses(analysisSummary.callOutcomeTone)}`}>
-                <div className="type-label-text text-[12px]">
-                  Call Outcome
+              <div className="space-y-3">
+                <div className={`rounded-[12px] border px-4 py-4 ${getSummaryToneClasses(analysisSummary.callOutcomeTone)}`}>
+                  <div className="type-label-text text-[11px]">
+                    Outcome
+                  </div>
+                  <div
+                    className={`type-section-title mt-2 text-[18px] ${getSummaryValueToneClasses(analysisSummary.callOutcomeTone)}`}
+                  >
+                    {analysisSummary.callOutcome}
+                  </div>
                 </div>
-                <div
-                  className={`type-section-title mt-2 text-[16px] ${getSummaryValueToneClasses(analysisSummary.callOutcomeTone)}`}
-                >
-                  {analysisSummary.callOutcome}
-                </div>
-              </div>
 
-              <div className={`rounded-[12px] border px-4 py-4 ${getSummaryToneClasses(analysisSummary.missedOpportunityTone)}`}>
-                <div className="type-label-text text-[12px]">
-                  Missed Opportunity
+                <div className={`rounded-[12px] border px-4 py-4 ${getSummaryToneClasses(analysisSummary.missedOpportunityTone)}`}>
+                  <div className="type-label-text text-[11px]">
+                    Opportunity Status
+                  </div>
+                  <div
+                    className={`type-section-title mt-2 text-[18px] ${getSummaryValueToneClasses(
+                      analysisSummary.missedOpportunityTone
+                    )}`}
+                  >
+                    {analysisSummary.missedOpportunity}
+                  </div>
                 </div>
-                <div
-                  className={`type-section-title mt-2 text-[16px] ${getSummaryValueToneClasses(
-                    analysisSummary.missedOpportunityTone
-                  )}`}
-                >
-                  {analysisSummary.missedOpportunity}
-                </div>
-              </div>
 
-              <div className="surface-secondary px-4 py-4">
-                <div className="type-label-text text-[12px]">
-                  Revenue Impact
+                <div className="surface-secondary px-4 py-4">
+                  <div className="type-label-text text-[11px]">
+                    Revenue Impact
+                  </div>
+                  <div className="type-page-title mt-2 text-[28px] leading-none">
+                    {analysisSummary.revenueImpact}
+                  </div>
                 </div>
-                <div className="type-section-title mt-2 text-[16px]">
-                  {analysisSummary.revenueImpact}
-                </div>
-              </div>
 
-              <div className="surface-secondary px-4 py-4">
-                <div className="type-label-text text-[12px]">
-                  Primary Issue
-                </div>
-                <div className="type-section-title mt-2 text-[16px]">
-                  {analysisSummary.primaryIssue}
-                </div>
-              </div>
-
-              <div className="surface-secondary px-4 py-4">
-                <div className="type-label-text text-[12px]">
-                  Confidence Score
-                </div>
-                <div className="type-section-title mt-2 text-[16px]">
-                  {analysisSummary.confidenceScore}
+                <div className="surface-secondary px-4 py-4">
+                  <div className="type-label-text text-[11px]">
+                    Confidence Score
+                  </div>
+                  <div className="type-section-title mt-2 text-[16px]">
+                    {analysisSummary.confidenceScore}
+                  </div>
                 </div>
               </div>
             </div>
@@ -485,10 +570,12 @@ export function CallRecordPage({
 
           <CardSection
             title="Recommended Action"
-            description="Prescribed remediation guidance based on conversion risk, response timing, and missing workflow completion signals."
+            description="Operational next step for the team responsible for recovering the opportunity."
           >
             <div className="surface-secondary px-5 py-5">
-              <p className="type-body-text text-[15px]">{row.recommendedAction}</p>
+              <div className="type-label-text text-[11px]">Next best action</div>
+              <div className="type-section-title mt-2 text-[22px] leading-8">{row.nextStep}</div>
+              <p className="type-body-text mt-3 text-[15px] leading-7">{row.recommendedAction}</p>
               {analysisError ? (
                 <p className="mt-3 text-[14px] leading-6 text-[#A24E4E]">{analysisError}</p>
               ) : null}
@@ -529,13 +616,13 @@ export function CallRecordPage({
         <aside className="space-y-5 xl:border-l xl:border-[#E5E7EB] xl:pl-5">
           <CardSection
             title="Estimated Revenue Impact"
-            description="Projected financial exposure associated with the current conversion failure."
+            description="Projected commercial value at risk for this interaction."
           >
             <div className="rounded-[12px] border border-[#D1D5DB] bg-[#FFFFFF] px-5 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
               <div className="type-label-text text-[12px] text-[#9A782C]">
                 Estimated Revenue Impact
               </div>
-              <div className="mt-3 text-[18px] font-bold tracking-[-0.02em] text-[#111827]">
+              <div className="mt-3 text-[28px] font-bold tracking-[-0.03em] text-[#111827]">
                 {row.revenue}
               </div>
               <p className="type-body-text mt-3 text-[14px]">{detailState.revenueContext}</p>
@@ -561,24 +648,24 @@ export function CallRecordPage({
 
           <CardSection
             title="Action Controls"
-            description="Execute remediation workflow actions directly from the interaction record."
+            description="Update the case status and keep the recovery workflow moving."
           >
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={handleResolve}
+                onClick={handleScheduleFollowUp}
                 disabled={row.status === "Resolved"}
                 className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
-              >
-                Mark as Resolved
+                >
+                Schedule Follow-Up
               </button>
               <button
                 type="button"
-                onClick={handleScheduleFollowUp}
+                onClick={handleResolve}
                 disabled={row.status === "Resolved"}
                 className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
               >
-                Schedule Follow-Up
+                Mark as Resolved
               </button>
               <button
                 type="button"
