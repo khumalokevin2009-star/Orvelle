@@ -286,63 +286,6 @@ function PriorityCallbacksPanel({
   );
 }
 
-function PerformanceSnapshot({
-  focusedRows,
-  focusedMissedRevenue,
-  averageResponseDelay
-}: {
-  focusedRows: DashboardCallRow[];
-  focusedMissedRevenue: number;
-  averageResponseDelay: number;
-}) {
-  const resolvedCount = focusedRows.filter((row) => getRowActionStatus(row) === "No Action Needed").length;
-  const callbackQueueCount = focusedRows.filter((row) => getRowActionStatus(row) === "Needs Action").length;
-
-  const items = [
-    {
-      label: "Callback Queue",
-      value: String(callbackQueueCount),
-      detail: "Open calls requiring a commercial follow-up"
-    },
-    {
-      label: "Focused Missed Revenue",
-      value: formatCurrency(focusedMissedRevenue),
-      detail: "Revenue still exposed inside the active trend focus"
-    },
-    {
-      label: "Resolved Calls",
-      value: String(resolvedCount),
-      detail: "Calls already recovered or closed without more action"
-    },
-    {
-      label: "Avg. Response Delay",
-      value: `${averageResponseDelay.toFixed(1)} hrs`,
-      detail: "Average elapsed time before first follow-up activity"
-    }
-  ];
-
-  return (
-    <section className="surface-secondary motion-fade-up p-5">
-      <div className="border-b border-[#E5E7EB] pb-4">
-        <h3 className="type-section-title text-[18px]">Performance snapshot</h3>
-        <p className="type-body-text mt-1 text-[14px]">
-          Operational context for the current queue and trend focus.
-        </p>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-        {items.map((item) => (
-          <div key={item.label} className="surface-primary px-4 py-4">
-            <div className="type-label-text text-[11px]">{item.label}</div>
-            <div className="type-section-title mt-2 text-[26px]">{item.value}</div>
-            <p className="type-body-text mt-2 text-[13px]">{item.detail}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function CallsOverviewTable({
   rows,
   emptyMessage,
@@ -475,14 +418,6 @@ export default function HomePage() {
     [rowsInSelectedRange]
   );
 
-  const focusedMissedRevenue = useMemo(
-    () =>
-      focusedRows
-        .filter((row) => getRowActionStatus(row) === "Needs Action")
-        .reduce((sum, row) => sum + row.revenueValue, 0),
-    [focusedRows]
-  );
-
   const recoveryRate = useMemo(() => {
     if (totalRevenue === 0) return 0;
     return Math.round((recoveredRevenue / totalRevenue) * 100);
@@ -495,12 +430,6 @@ export default function HomePage() {
       ).length,
     [rowsInSelectedRange]
   );
-
-  const averageResponseDelay = useMemo(() => {
-    if (focusedRows.length === 0) return 0;
-
-    return focusedRows.reduce((sum, row) => sum + row.responseDelayHours, 0) / focusedRows.length;
-  }, [focusedRows]);
 
   const priorityRows = useMemo(
     () =>
@@ -848,21 +777,15 @@ export default function HomePage() {
             onMarkResolved={handleMarkResolved}
           />
 
-          <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_340px] xl:items-start xl:gap-5">
+          <section>
             <MissedOpportunitiesChart
               title="Missed revenue trend"
               data={missedRevenueTrendData}
               activeBucket={activeTrendBucket}
               onBucketSelect={handleTrendBucketSelect}
               subtitle="Track where missed revenue is accumulating over time and focus the operating view on a specific reporting period."
-              peakLabel="Peak Missed Revenue"
               tooltipLabel="missed revenue"
               valueFormatter={formatCurrency}
-            />
-            <PerformanceSnapshot
-              focusedRows={focusedRows}
-              focusedMissedRevenue={focusedMissedRevenue}
-              averageResponseDelay={averageResponseDelay}
             />
           </section>
 
