@@ -92,19 +92,19 @@ export function DashboardHeader({
   }, [isOpen]);
 
   return (
-    <div className="motion-fade-up relative z-20 flex flex-col gap-4 overflow-visible sm:gap-5 lg:flex-row lg:items-start lg:justify-between">
-      <div className="pt-1">
-        <h1 className="type-page-title text-[28px] sm:text-[32px]">
+    <div className="motion-fade-up relative z-20 flex flex-col gap-5 overflow-visible sm:gap-6 lg:flex-row lg:items-start lg:justify-between">
+      <div className="max-w-[760px] pt-1">
+        <h1 className="type-page-title text-[29px] sm:text-[33px]">
           Revenue Recovery Overview
         </h1>
-        <p className="type-body-text mt-2 max-w-[720px] text-[15px]">
+        <p className="type-body-text mt-2.5 max-w-[720px] text-[15px] leading-7">
           A structured operating view of missed revenue, recovery performance, and the next calls your team should act on.
         </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap gap-2.5">
           {summaryItems.map((item) => (
             <div
               key={item}
-              className="inline-flex items-center rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-1.5 text-[13px] font-medium text-[#374151]"
+              className="inline-flex items-center rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-3.5 py-1.5 text-[12px] font-medium tracking-[0.01em] text-[#4B5563]"
             >
               {item}
             </div>
@@ -112,7 +112,7 @@ export function DashboardHeader({
         </div>
       </div>
 
-      <div className="relative z-30 flex w-full flex-wrap items-center justify-between gap-3 self-start sm:w-auto sm:flex-nowrap sm:justify-start">
+      <div className="relative z-30 flex w-full flex-wrap items-center justify-between gap-2.5 self-start sm:w-auto sm:flex-nowrap sm:justify-start">
         <div className="relative z-40" ref={dropdownRef}>
           <button
             ref={triggerRef}
@@ -120,7 +120,7 @@ export function DashboardHeader({
             onClick={() => setIsOpen((open) => !open)}
             aria-expanded={isOpen}
             aria-haspopup="menu"
-            className="inline-flex h-11 min-w-[0] cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-sm font-semibold text-[#111827] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] sm:justify-start"
+            className="inline-flex h-11 min-w-[0] cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-sm font-semibold text-[#111827] shadow-[0_1px_2px_rgba(17,24,39,0.04)] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] sm:justify-start"
           >
             <CalendarIcon className="h-[18px] w-[18px] text-[#6B7280]" />
             <span>{getDateRangeLabel(selectedRange)}</span>
@@ -133,7 +133,7 @@ export function DashboardHeader({
         <button
           type="button"
           onClick={onCopyLink}
-          className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] text-[#6B7280] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:text-[#111827] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+          className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] text-[#6B7280] shadow-[0_1px_2px_rgba(17,24,39,0.04)] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:text-[#111827] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
           aria-label="Copy overview link"
         >
           <LinkIcon className="h-[18px] w-[18px]" />

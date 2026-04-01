@@ -126,25 +126,25 @@ function PrimaryMetrics({
 }) {
   return (
     <section className="motion-fade-up">
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-4 sm:mb-5">
         <div>
-          <h2 className="type-section-title text-[18px] sm:text-[19px]">Key metrics</h2>
-          <p className="type-body-text mt-1 text-[14px]">
+          <h2 className="type-section-title text-[19px] sm:text-[20px]">Key metrics</h2>
+          <p className="type-body-text mt-1.5 text-[14px] leading-6">
             Revenue exposure, recovery progress, and analysis coverage for the active window.
           </p>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
         {items.map((item, index) => (
           <div
             key={item.label}
-            className="surface-primary motion-fade-up px-5 py-5 sm:px-6"
+            className="surface-primary motion-fade-up flex min-h-[164px] flex-col px-5 py-5 shadow-[0_12px_28px_rgba(17,24,39,0.04)] sm:min-h-[176px] sm:px-6 sm:py-6"
             style={{ animationDelay: `${70 + index * 45}ms` }}
           >
-            <div className="type-label-text text-[12px]">{item.label}</div>
-            <div className="type-metric-text mt-3 text-[34px] sm:text-[38px]">{item.value}</div>
-            <p className="type-body-text mt-2 text-[13px]">{item.detail}</p>
+            <div className="type-label-text text-[11px]">{item.label}</div>
+            <div className="type-metric-text mt-4 text-[32px] sm:text-[36px] xl:text-[38px]">{item.value}</div>
+            <p className="type-body-text mt-auto pt-4 text-[13px] leading-6">{item.detail}</p>
           </div>
         ))}
       </div>
@@ -169,30 +169,30 @@ function PriorityCallbacksPanel({
   const highestOpportunity = rows.reduce((highest, row) => Math.max(highest, row.revenueValue), 0);
 
   return (
-    <section className="surface-primary motion-fade-up overflow-hidden border-[#D1D5DB] shadow-[0_18px_40px_rgba(17,24,39,0.06)]">
-      <div className="border-b border-[#E5E7EB] px-5 py-6 sm:px-6 sm:py-7">
+    <section className="surface-primary motion-fade-up overflow-hidden border-[#D1D5DB] shadow-[0_22px_44px_rgba(17,24,39,0.055)]">
+      <div className="border-b border-[#E5E7EB] px-5 py-6 sm:px-7 sm:py-7">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="type-label-text text-[11px]">Core operating queue</div>
-            <h2 className="type-page-title mt-2 text-[30px] sm:text-[34px]">Priority Callbacks</h2>
+            <h2 className="type-page-title mt-2 text-[29px] sm:text-[33px]">Priority Callbacks</h2>
             <p className="type-body-text mt-3 max-w-[780px] text-[15px] leading-7">
               The highest-value missed opportunities your team should call back first in{" "}
               {getDateRangeLabel(selectedRange).toLowerCase()}.
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3 xl:min-w-[460px]">
-            <div className="surface-secondary px-4 py-3">
+          <div className="grid gap-2.5 sm:grid-cols-3 xl:min-w-[470px]">
+            <div className="surface-secondary min-h-[102px] px-4 py-3.5">
               <div className="type-label-text text-[11px]">Open callbacks</div>
-              <div className="type-section-title mt-2 text-[22px]">{rows.length}</div>
+              <div className="type-section-title mt-2.5 text-[22px]">{rows.length}</div>
             </div>
-            <div className="surface-secondary px-4 py-3">
+            <div className="surface-secondary min-h-[102px] px-4 py-3.5">
               <div className="type-label-text text-[11px]">Revenue in queue</div>
-              <div className="type-section-title mt-2 text-[22px]">{formatCurrency(queueRevenue)}</div>
+              <div className="type-section-title mt-2.5 text-[22px]">{formatCurrency(queueRevenue)}</div>
             </div>
-            <div className="surface-secondary px-4 py-3">
+            <div className="surface-secondary min-h-[102px] px-4 py-3.5">
               <div className="type-label-text text-[11px]">Highest opportunity</div>
-              <div className="type-section-title mt-2 text-[22px]">
+              <div className="type-section-title mt-2.5 text-[22px]">
                 {rows.length > 0 ? formatCurrency(highestOpportunity) : "—"}
               </div>
             </div>
@@ -203,14 +203,14 @@ function PriorityCallbacksPanel({
       <div className="divide-y divide-[#E5E7EB] bg-[#FCFCFD]">
         {rows.length > 0 ? (
           rows.map((row, index) => (
-            <div key={row.id} className="bg-[#FFFFFF] px-5 py-6 sm:px-6 sm:py-7">
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_300px] xl:gap-6">
+            <div key={row.id} className="bg-[#FFFFFF] px-5 py-6 sm:px-7 sm:py-7">
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_290px] xl:gap-6">
                 <div className="min-w-0">
-                  <div className="type-label-text text-[11px]">Priority {String(index + 1).padStart(2, "0")}</div>
+                  <div className="type-label-text text-[10px]">Priority {String(index + 1).padStart(2, "0")}</div>
 
                   <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0">
-                      <div className="type-page-title text-[26px] leading-[1.02] sm:text-[30px]">
+                      <div className="type-page-title text-[25px] leading-[1.04] sm:text-[29px]">
                         {row.caller}
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px] text-[#6B7280]">
@@ -222,16 +222,16 @@ function PriorityCallbacksPanel({
                       </div>
                     </div>
 
-                    <div className="surface-secondary min-w-[172px] px-4 py-3">
+                    <div className="surface-secondary min-w-[174px] px-4 py-3.5">
                       <div className="type-label-text text-[11px]">Estimated revenue</div>
-                      <div className="type-page-title mt-2 text-[30px] leading-none text-[#111827]">
+                      <div className="type-page-title mt-2.5 text-[30px] leading-none text-[#111827]">
                         {row.revenueImpact ?? row.revenue}
                       </div>
                     </div>
                   </div>
 
-                  <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
-                    <div className="space-y-4">
+                  <div className="mt-6 grid gap-3.5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.28fr)]">
+                    <div className="space-y-3.5">
                       <div className="surface-secondary px-4 py-4">
                         <div className="type-label-text text-[11px]">Issue summary</div>
                         <div className="type-section-title mt-2 text-[18px] leading-6">{getIssueLabel(row)}</div>
@@ -239,7 +239,7 @@ function PriorityCallbacksPanel({
 
                       <div className="surface-secondary px-4 py-4">
                         <div className="type-label-text text-[11px]">Urgency</div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2.5">
+                        <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
                           <span
                             className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getUrgencyClasses(
                               row.urgency
@@ -260,11 +260,11 @@ function PriorityCallbacksPanel({
                   </div>
                 </div>
 
-                <div className="surface-secondary flex flex-col justify-between gap-4 px-4 py-4">
+                <div className="surface-secondary flex flex-col justify-between gap-4 px-4 py-4.5">
                   <div>
                     <div className="type-label-text text-[11px]">Action path</div>
-                    <p className="type-body-text mt-2 text-[14px] leading-7">
-                      Use the record view to confirm the conversation context, document ownership, and close the case once follow-up is complete.
+                    <p className="type-body-text mt-2.5 text-[14px] leading-7">
+                      Confirm the conversation context, document ownership, and close the case once outreach is complete.
                     </p>
                   </div>
 
@@ -272,21 +272,21 @@ function PriorityCallbacksPanel({
                     <button
                       type="button"
                       onClick={() => onOpenRecord(row)}
-                      className="button-primary-accent inline-flex cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                      className="button-primary-accent inline-flex min-h-[44px] cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
                     >
                       Open Record
                     </button>
                     <button
                       type="button"
                       onClick={() => onAssignFollowUp(row)}
-                      className="button-secondary-ui inline-flex cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                      className="button-secondary-ui inline-flex min-h-[44px] cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
                     >
                       Assign Follow-Up
                     </button>
                     <button
                       type="button"
                       onClick={() => onMarkResolved(row)}
-                      className="button-secondary-ui inline-flex cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                      className="button-secondary-ui inline-flex min-h-[44px] cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
                     >
                       Mark Resolved
                     </button>
@@ -319,22 +319,22 @@ function CallsOverviewTable({
 }) {
   return (
     <section className="surface-primary motion-fade-up overflow-hidden">
-      <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6">
+      <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6 sm:py-5.5">
         <h2 className="type-section-title text-[20px] sm:text-[22px]">Analysed calls</h2>
-        <p className="type-body-text mt-2 text-[14px]">
-          Revenue-recovery work queue showing the calls your team needs to understand, recover, or close out.
+        <p className="type-body-text mt-2 text-[14px] leading-6">
+          Operational queue showing the calls your team needs to review, recover, or close out.
         </p>
       </div>
 
       <div className="ui-scrollbar ui-scrollbar-x overflow-x-auto">
-        <table className="min-w-[840px] border-separate border-spacing-0 text-left">
-          <thead className="bg-[#F9FAFB]">
-            <tr className="text-[13px] font-medium uppercase tracking-[0.05em] text-[#374151]">
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Name</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Outcome</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Issue</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Estimated Value</th>
-              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Timestamp</th>
+        <table className="min-w-[860px] border-separate border-spacing-0 text-left">
+          <thead className="bg-[#FAFAFB]">
+            <tr className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#4B5563]">
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Name</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Outcome</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Issue</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Estimated Value</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Timestamp</th>
             </tr>
           </thead>
           <tbody>
@@ -352,20 +352,20 @@ function CallsOverviewTable({
                       onOpenRecord(row);
                     }
                   }}
-                  className="group cursor-pointer transition outline-none hover:bg-[#F8FAFC] focus-visible:bg-[#F8FAFC]"
+                  className="group cursor-pointer transition outline-none hover:bg-[#FAFBFC] focus-visible:bg-[#FAFBFC]"
                 >
-                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                  <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="type-section-title text-[16px]">{row.caller}</div>
                         <div className="type-muted-text mt-1 text-[13px]">{getRowActionStatus(row)}</div>
                       </div>
-                      <span className="type-muted-text mt-0.5 shrink-0 text-[12px] transition group-hover:text-[#111827] group-focus-visible:text-[#111827]">
+                      <span className="type-muted-text mt-0.5 shrink-0 text-[12px] font-medium transition group-hover:text-[#111827] group-focus-visible:text-[#111827]">
                         Open record →
                       </span>
                     </div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                  <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
                     <span
                       className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getOutcomeClasses(
                         row.callOutcome ?? "Pending"
@@ -374,13 +374,13 @@ function CallsOverviewTable({
                       {row.callOutcome ?? "Pending"}
                     </span>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                  <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
                     <div className="type-section-title text-[15px] leading-6">{getIssueLabel(row)}</div>
-                    <div className="type-body-text mt-1 text-[13px]">
+                    <div className="type-body-text mt-1.5 text-[13px] leading-6">
                       {row.conciseAnalystNote ?? row.analystNote ?? row.reason}
                     </div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                  <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
                     <div className="inline-flex rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
                       <div>
                         <div className="text-[16px] font-bold tracking-[-0.02em] text-[#111827]">
@@ -390,7 +390,7 @@ function CallsOverviewTable({
                       </div>
                     </div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-5 py-4.5 align-top">
+                  <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
                     <div className="type-section-title text-[14px]">{row.date}</div>
                     <div className="type-muted-text mt-1 text-[12px]">{row.time}</div>
                   </td>
@@ -398,7 +398,7 @@ function CallsOverviewTable({
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="px-5 py-10 text-center">
+                <td colSpan={5} className="px-5 py-10 text-center sm:px-6">
                   <div className="type-body-text text-[15px]">{emptyMessage}</div>
                 </td>
               </tr>
@@ -804,7 +804,7 @@ export default function HomePage() {
           onCopyLink={handleCopyLink}
         />
 
-        <div className="mt-5 space-y-5 lg:mt-6 xl:space-y-6">
+        <div className="mt-6 space-y-6 lg:mt-7 xl:space-y-7">
           {dataState === "error" && dataError ? (
             <div className="surface-primary border border-[#FECACA] bg-[#FEF2F2] px-5 py-4 text-[14px] text-[#991B1B]">
               {dataError}

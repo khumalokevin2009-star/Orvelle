@@ -107,11 +107,12 @@ export function MissedOpportunitiesChart({
   valueFormatter
 }: MissedOpportunitiesChartProps) {
   return (
-    <section className="surface-secondary motion-fade-up motion-delay-3 p-5">
+    <section className="surface-primary motion-fade-up motion-delay-3 px-5 py-5 sm:px-6 sm:py-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="type-section-title text-[18px]">{title}</h3>
-          <p className="type-body-text mt-1 text-[14px]">{subtitle}</p>
+          <div className="type-label-text text-[11px]">Trend performance</div>
+          <h3 className="type-section-title mt-2 text-[20px]">{title}</h3>
+          <p className="type-body-text mt-2 text-[14px] leading-6">{subtitle}</p>
         </div>
         <div className="flex min-h-[20px] items-center">
           {activeBucket ? (
@@ -129,17 +130,17 @@ export function MissedOpportunitiesChart({
         </div>
       </div>
 
-      <div className="surface-primary mt-5 p-4 sm:p-5">
-        <div className="h-[220px] w-full">
+      <div className="mt-5 rounded-[16px] border border-[#E5E7EB] bg-[#FCFCFD] p-4 sm:p-5">
+        <div className="h-[228px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 14, right: 10, left: -18, bottom: 0 }}>
               <defs>
                 <linearGradient id="missedRevenueFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#111827" stopOpacity="0.14" />
+                  <stop offset="0%" stopColor="#111827" stopOpacity="0.12" />
                   <stop offset="100%" stopColor="#111827" stopOpacity="0.02" />
                 </linearGradient>
               </defs>
-              <CartesianGrid vertical={false} stroke="#E5E7EB" strokeDasharray="2 8" />
+              <CartesianGrid vertical={false} stroke="#E5E7EB" strokeDasharray="3 8" />
               <XAxis
                 dataKey="label"
                 tickLine={false}
@@ -188,13 +189,13 @@ export function MissedOpportunitiesChart({
         </div>
 
         <div className="mt-4 flex flex-col gap-2 border-t border-[#E5E7EB] pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="type-body-text text-[13px]">
+          <div className="type-body-text text-[13px] leading-6">
             {activeBucket
               ? `Queue focused on ${activeBucket}. Select the same point again to return to the full operating view.`
               : "Click a point to focus the callback queue on a specific reporting period."}
           </div>
           {!activeBucket ? (
-            <div className="type-label-text text-[11px]">Missed revenue trend over time</div>
+            <div className="type-label-text text-[10px]">Missed revenue trend over time</div>
           ) : null}
         </div>
       </div>
