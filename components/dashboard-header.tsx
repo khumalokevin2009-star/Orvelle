@@ -95,10 +95,10 @@ export function DashboardHeader({
     <div className="motion-fade-up relative z-20 flex flex-col gap-4 overflow-visible sm:gap-5 lg:flex-row lg:items-start lg:justify-between">
       <div className="pt-1">
         <h1 className="type-page-title text-[28px] sm:text-[32px]">
-          Call Performance Overview
+          Revenue Recovery Overview
         </h1>
         <p className="type-body-text mt-2 max-w-[720px] text-[15px]">
-          Monitoring conversion failures and revenue leakage across inbound call activity
+          A structured operating view of missed revenue, recovery performance, and the next calls your team should act on.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {summaryItems.map((item) => (

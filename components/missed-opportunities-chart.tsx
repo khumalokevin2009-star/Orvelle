@@ -16,28 +16,38 @@ export type TrendDatum = {
 };
 
 type MissedOpportunitiesChartProps = {
+  title?: string;
   data: TrendDatum[];
   subtitle: string;
   activeBucket: string | null;
   onBucketSelect: (label: string) => void;
+  peakLabel?: string;
+  tooltipLabel?: string;
+  valueFormatter?: (value: number) => string;
 };
 
 function ChartTooltip({
   active,
   payload,
-  label
+  label,
+  tooltipLabel = "flagged interactions",
+  valueFormatter
 }: {
   active?: boolean;
   payload?: Array<{ value?: number }>;
   label?: string;
+  tooltipLabel?: string;
+  valueFormatter?: (value: number) => string;
 }) {
   if (!active || !payload?.length) return null;
+
+  const rawValue = payload[0]?.value ?? 0;
 
   return (
     <div className="surface-primary px-3 py-2 shadow-[0_10px_22px_rgba(17,24,39,0.08)]">
       <div className="type-label-text text-[11px]">{label}</div>
       <div className="type-section-title mt-1 text-[16px]">
-        {payload[0]?.value} flagged interactions
+        {valueFormatter ? valueFormatter(rawValue) : rawValue} {tooltipLabel}
       </div>
     </div>
   );
@@ -89,10 +99,14 @@ function ChartDot({
 }
 
 export function MissedOpportunitiesChart({
+  title = "Revenue Leakage Trend",
   data,
   subtitle,
   activeBucket,
-  onBucketSelect
+  onBucketSelect,
+  peakLabel = "Peak Volume",
+  tooltipLabel = "flagged interactions",
+  valueFormatter
 }: MissedOpportunitiesChartProps) {
   const peakValue = Math.max(...data.map((item) => item.value));
 
@@ -100,7 +114,7 @@ export function MissedOpportunitiesChart({
     <section className="surface-secondary motion-fade-up motion-delay-3 p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="type-section-title text-[18px]">Revenue Leakage Trend</h3>
+          <h3 className="type-section-title text-[18px]">{title}</h3>
           <p className="type-body-text mt-1 text-[14px]">{subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -114,8 +128,10 @@ export function MissedOpportunitiesChart({
             </button>
           ) : null}
           <div className="surface-primary px-3 py-2 text-right">
-            <div className="type-label-text text-[11px]">Peak Volume</div>
-            <div className="type-metric-text mt-1 text-[18px]">{peakValue}</div>
+            <div className="type-label-text text-[11px]">{peakLabel}</div>
+            <div className="type-metric-text mt-1 text-[18px]">
+              {valueFormatter ? valueFormatter(peakValue) : peakValue}
+            </div>
           </div>
         </div>
       </div>
@@ -134,7 +150,7 @@ export function MissedOpportunitiesChart({
               <YAxis hide domain={["dataMin - 1", "dataMax + 1"]} />
               <Tooltip
                 cursor={{ stroke: "#D1D5DB", strokeWidth: 1.5, strokeDasharray: "4 4" }}
-                content={<ChartTooltip />}
+                content={<ChartTooltip tooltipLabel={tooltipLabel} valueFormatter={valueFormatter} />}
               />
               <Line
                 type="monotone"

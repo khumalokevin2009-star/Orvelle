@@ -2,50 +2,24 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ActionBar, type ActionPanel } from "@/components/action-bar";
 import {
   DashboardHeader,
   getDateRangeLabel,
   type DateRangeKey
 } from "@/components/dashboard-header";
-import {
-  FlaggedCallsTable
-} from "@/components/flagged-calls-table";
-import {
-  type CallTableRow,
-  type CallTabId
-} from "@/data/mock-platform-data";
-import {
-  MetricCards,
-  RevenueSummaryCards,
-  type MetricCardItem,
-  type RevenueSummaryItem
-} from "@/components/metric-cards";
 import { MissedOpportunitiesChart } from "@/components/missed-opportunities-chart";
-import { BoltIcon, MailMiniIcon, SearchFlagIcon, SettingsIcon, StatsIcon } from "@/components/icons";
+import { type CallTableRow } from "@/data/mock-platform-data";
 import {
   buildTrendData,
   getLastUpdatedLabel,
   isWithinDateRange,
-  type DashboardCallRow,
+  type DashboardCallRow
 } from "@/lib/dashboard-calls";
 
-type SidebarItem = "dashboard" | "mail";
-
-type PanelState =
-  | {
-      type: ActionPanel | "mail";
-    }
-  | {
-      type: "call";
-      rowId: string;
-    }
-  | null;
-
-type SettingsState = {
-  emailAlerts: boolean;
-  reviewLock: boolean;
-  revenueWarnings: boolean;
+type PrimaryMetricItem = {
+  label: string;
+  value: string;
+  detail: string;
 };
 
 function formatCurrency(value: number) {
@@ -56,158 +30,355 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function formatTabLabel(tab: CallTabId | null) {
-  if (!tab) return "All Flagged Interactions";
-
-  if (tab === "missed-booking") return "Unconverted High-Intent Leads";
-  if (tab === "delayed-response") return "Response SLA Breaches";
-
-  return "Booked Interactions";
-}
-
-function getOpenRecoveryCount(rows: CallTableRow[]) {
-  return rows.filter((row) => (row.actionStatus ?? (row.status === "Resolved" ? "No Action Needed" : "Needs Action")) === "Needs Action").length;
-}
-
 function getRowActionStatus(row: CallTableRow) {
   return row.actionStatus ?? (row.status === "Resolved" ? "No Action Needed" : "Needs Action");
 }
 
-function DrawerMetric({
-  label,
-  value,
-  accent = false
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-}) {
-  return (
-    <div className={`${accent ? "surface-primary" : "surface-secondary"} px-4 py-3`}>
-      <div className="type-label-text text-[12px]">{label}</div>
-      <div className={`type-section-title mt-2 text-[20px] ${accent ? "text-[#111827]" : "text-[#111827]"}`}>
-        {value}
-      </div>
-    </div>
-  );
+function getIssueLabel(row: CallTableRow) {
+  const primaryIssue = row.primaryIssue?.trim();
+
+  if (primaryIssue && primaryIssue !== "Analysis pending") {
+    return primaryIssue;
+  }
+
+  return row.reason;
 }
 
-type ActivityTone = "warning" | "info" | "neutral";
+function getUrgencyClasses(urgency: CallTableRow["urgency"]) {
+  if (urgency === "Critical Priority") {
+    return "border border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]";
+  }
 
-function RecentActivityPanel({
-  items
-}: {
-  items: Array<{ title: string; detail: string; time: string; tone: ActivityTone }>;
-}) {
-  const dotStyles: Record<(typeof items)[number]["tone"], string> = {
-    warning: "bg-[#111827]",
-    info: "bg-[#6B7280]",
-    neutral: "bg-[#D1D5DB]"
+  if (urgency === "Elevated Priority") {
+    return "border border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]";
+  }
+
+  return "border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280]";
+}
+
+function sortPriorityRows(rows: DashboardCallRow[]) {
+  const urgencyRank: Record<CallTableRow["urgency"], number> = {
+    "Critical Priority": 0,
+    "Elevated Priority": 1,
+    Closed: 2
   };
 
+  return [...rows].sort((left, right) => {
+    const urgencyDelta = urgencyRank[left.urgency] - urgencyRank[right.urgency];
+    if (urgencyDelta !== 0) return urgencyDelta;
+
+    const revenueDelta = right.revenueValue - left.revenueValue;
+    if (revenueDelta !== 0) return revenueDelta;
+
+    return right.responseDelayHours - left.responseDelayHours;
+  });
+}
+
+function buildMissedRevenueTrendData(rows: DashboardCallRow[], range: DateRangeKey) {
+  const baseTrend = buildTrendData(rows, range);
+  const revenueByLabel = new Map<string, number>();
+
+  rows.forEach((row) => {
+    if (getRowActionStatus(row) !== "Needs Action") {
+      return;
+    }
+
+    const label = row.periodByRange[range];
+    revenueByLabel.set(label, (revenueByLabel.get(label) ?? 0) + row.revenueValue);
+  });
+
+  return baseTrend.map((point) => ({
+    label: point.label,
+    value: revenueByLabel.get(point.label) ?? 0
+  }));
+}
+
+function PrimaryMetrics({
+  items
+}: {
+  items: PrimaryMetricItem[];
+}) {
   return (
-    <section className="surface-secondary motion-fade-up motion-delay-3 p-5">
-      <div className="flex items-start justify-between gap-4">
+    <section className="motion-fade-up">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <h3 className="type-section-title text-[18px]">Operational Activity Log</h3>
+          <h2 className="type-section-title text-[18px] sm:text-[19px]">Key metrics</h2>
           <p className="type-body-text mt-1 text-[14px]">
-            Recent status changes, escalation events, and revenue impact updates.
+            Revenue exposure, recovery progress, and analysis coverage for the active window.
           </p>
         </div>
-        <div className="surface-primary px-3 py-1 text-[12px] font-semibold text-[#374151]">
-          Operational Feed
-        </div>
       </div>
 
-      <div className="mt-5 space-y-3">
-        {items.map((item) => (
-          <div key={`${item.title}-${item.time}`} className="surface-primary px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${dotStyles[item.tone]}`} />
-                  <span className="type-section-title text-[14px]">{item.title}</span>
-                </div>
-                <p className="type-body-text mt-1 text-[13px]">{item.detail}</p>
-              </div>
-              <span className="type-muted-text whitespace-nowrap text-[12px]">{item.time}</span>
-            </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {items.map((item, index) => (
+          <div
+            key={item.label}
+            className="surface-primary motion-fade-up px-5 py-5 sm:px-6"
+            style={{ animationDelay: `${70 + index * 45}ms` }}
+          >
+            <div className="type-label-text text-[12px]">{item.label}</div>
+            <div className="type-metric-text mt-3 text-[34px] sm:text-[38px]">{item.value}</div>
+            <p className="type-body-text mt-2 text-[13px]">{item.detail}</p>
           </div>
         ))}
-      </div>
-
-      <div className="mt-4 rounded-[12px] border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
-        <div className="type-section-title text-[13px]">No unresolved escalations detected</div>
-        <p className="type-body-text mt-1 text-[13px]">
-          Additional operational alerts will appear here when a new conversion failure or SLA breach requires intervention.
-        </p>
       </div>
     </section>
   );
 }
 
-function ReviewQueuePanel({
-  rows
+function PriorityCallbacksPanel({
+  rows,
+  selectedRange,
+  onOpenRecord,
+  onAssignFollowUp,
+  onMarkResolved
 }: {
-  rows: CallTableRow[];
+  rows: DashboardCallRow[];
+  selectedRange: DateRangeKey;
+  onOpenRecord: (row: DashboardCallRow) => void;
+  onAssignFollowUp: (row: DashboardCallRow) => void;
+  onMarkResolved: (row: DashboardCallRow) => void;
 }) {
-  const statusClasses: Record<CallTableRow["statusTone"], string> = {
-    critical: "border border-[#C7D2FE] bg-[#EEF2FF] text-[#1E3A8A]",
-    pending: "border border-[#C7D2FE] bg-[#EEF2FF] text-[#1E3A8A]",
-    recovered: "border border-[#E5E7EB] bg-[#FFFFFF] text-[#111827]"
-  };
+  return (
+    <section className="surface-primary motion-fade-up overflow-hidden">
+      <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="type-page-title text-[28px] sm:text-[30px]">Priority Callbacks</h2>
+            <p className="type-body-text mt-2 max-w-[720px] text-[15px]">
+              The highest-value missed opportunities your team should call back first in{" "}
+              {getDateRangeLabel(selectedRange).toLowerCase()}.
+            </p>
+          </div>
+          <div className="surface-secondary px-3 py-2 text-right">
+            <div className="type-label-text text-[11px]">Open callback queue</div>
+            <div className="type-section-title mt-1 text-[18px]">{rows.length}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="divide-y divide-[#E5E7EB]">
+        {rows.length > 0 ? (
+          rows.map((row) => (
+            <div key={row.id} className="bg-[#FFFFFF] px-5 py-5 sm:px-6 sm:py-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0">
+                      <div className="type-page-title text-[24px] leading-[1.05] sm:text-[26px]">
+                        {row.caller}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px] text-[#6B7280]">
+                        <span>{row.time}</span>
+                        <span className="text-[#D1D5DB]">•</span>
+                        <span>{row.assignedOwner}</span>
+                        <span className="text-[#D1D5DB]">•</span>
+                        <span>{row.dueBy}</span>
+                      </div>
+                    </div>
+
+                    <div className="surface-secondary min-w-[152px] px-4 py-3">
+                      <div className="type-label-text text-[11px]">Estimated Revenue Opportunity</div>
+                      <div className="type-section-title mt-2 text-[24px] text-[#111827]">
+                        {row.revenueImpact ?? row.revenue}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
+                    <div className="space-y-4">
+                      <div>
+                        <div className="type-label-text text-[11px]">Issue</div>
+                        <div className="type-section-title mt-1 text-[16px]">{getIssueLabel(row)}</div>
+                      </div>
+
+                      <div>
+                        <div className="type-label-text text-[11px]">Urgency</div>
+                        <div className="mt-1">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getUrgencyClasses(
+                              row.urgency
+                            )}`}
+                          >
+                            {row.urgency}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="type-label-text text-[11px]">Recommended Action</div>
+                      <p className="type-body-text mt-2 text-[14px] leading-7">{row.recommendedAction}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => onOpenRecord(row)}
+                  className="button-primary-accent inline-flex cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                >
+                  Open Record
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAssignFollowUp(row)}
+                  className="button-secondary-ui inline-flex cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                >
+                  Assign Follow-Up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onMarkResolved(row)}
+                  className="button-secondary-ui inline-flex cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                >
+                  Mark Resolved
+                </button>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="px-5 py-10 text-center sm:px-6">
+            <div className="type-section-title text-[18px]">No priority callbacks in this view</div>
+            <p className="type-body-text mt-2 text-[14px]">
+              All analysed calls in the current window are either resolved or outside the selected trend focus.
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PerformanceSnapshot({
+  focusedRows,
+  focusedMissedRevenue,
+  averageResponseDelay
+}: {
+  focusedRows: DashboardCallRow[];
+  focusedMissedRevenue: number;
+  averageResponseDelay: number;
+}) {
+  const resolvedCount = focusedRows.filter((row) => getRowActionStatus(row) === "No Action Needed").length;
+  const callbackQueueCount = focusedRows.filter((row) => getRowActionStatus(row) === "Needs Action").length;
+
+  const items = [
+    {
+      label: "Callback Queue",
+      value: String(callbackQueueCount),
+      detail: "Open calls requiring a commercial follow-up"
+    },
+    {
+      label: "Focused Missed Revenue",
+      value: formatCurrency(focusedMissedRevenue),
+      detail: "Revenue still exposed inside the active trend focus"
+    },
+    {
+      label: "Resolved Calls",
+      value: String(resolvedCount),
+      detail: "Calls already recovered or closed without more action"
+    },
+    {
+      label: "Avg. Response Delay",
+      value: `${averageResponseDelay.toFixed(1)} hrs`,
+      detail: "Average elapsed time before first follow-up activity"
+    }
+  ];
 
   return (
-    <section className="surface-primary motion-fade-up motion-delay-3 overflow-hidden">
-      <div className="border-b border-[#E5E7EB] px-4 py-4 sm:px-6 sm:py-5">
-        <h3 className="type-section-title text-[18px]">Review Queue</h3>
+    <section className="surface-secondary motion-fade-up p-5">
+      <div className="border-b border-[#E5E7EB] pb-4">
+        <h3 className="type-section-title text-[18px]">Performance snapshot</h3>
         <p className="type-body-text mt-1 text-[14px]">
-          Pending analyst assignments and due times for unresolved interaction cases.
+          Operational context for the current queue and trend focus.
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+        {items.map((item) => (
+          <div key={item.label} className="surface-primary px-4 py-4">
+            <div className="type-label-text text-[11px]">{item.label}</div>
+            <div className="type-section-title mt-2 text-[26px]">{item.value}</div>
+            <p className="type-body-text mt-2 text-[13px]">{item.detail}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CallsOverviewTable({
+  rows,
+  emptyMessage,
+  onOpenRecord
+}: {
+  rows: DashboardCallRow[];
+  emptyMessage: string;
+  onOpenRecord: (row: DashboardCallRow) => void;
+}) {
+  return (
+    <section className="surface-primary motion-fade-up overflow-hidden">
+      <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6">
+        <h2 className="type-section-title text-[20px] sm:text-[22px]">Analysed calls</h2>
+        <p className="type-body-text mt-2 text-[14px]">
+          Structured view of the calls driving missed revenue, recoveries, and operational follow-up.
         </p>
       </div>
 
       <div className="ui-scrollbar ui-scrollbar-x overflow-x-auto">
-        <table className="min-w-[760px] border-separate border-spacing-0 text-left sm:min-w-[820px]">
+        <table className="min-w-[760px] border-separate border-spacing-0 text-left">
           <thead className="bg-[#F9FAFB]">
             <tr className="text-[13px] font-medium uppercase tracking-[0.05em] text-[#374151]">
-              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Caller</th>
-              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Failure Type</th>
-              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Assigned Owner</th>
-              <th className="border-b border-[#E5E7EB] px-4 py-3 sm:px-5 sm:py-3.5">Due By</th>
-              <th className="border-b border-[#E5E7EB] px-4 py-3 text-right sm:px-5 sm:py-3.5">Status</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Name</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Outcome</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Issue</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Value</th>
+              <th className="border-b border-[#E5E7EB] px-5 py-3.5">Timestamp</th>
             </tr>
           </thead>
           <tbody>
             {rows.length > 0 ? (
               rows.map((row) => (
-                <tr key={`queue-${row.id}`} className="hover:bg-[#F3F4F6]">
-                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top sm:px-5 sm:py-3.5">
-                    <div className="type-section-title text-[15px]">{row.caller}</div>
-                    <div className="type-muted-text mt-1 text-[13px]">{row.date}</div>
+                <tr
+                  key={row.id}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open analysed call for ${row.caller}`}
+                  onClick={() => onOpenRecord(row)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onOpenRecord(row);
+                    }
+                  }}
+                  className="cursor-pointer transition outline-none hover:bg-[#F3F4F6] focus-visible:bg-[#F3F4F6]"
+                >
+                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
+                    <div className="type-section-title text-[16px]">{row.caller}</div>
+                    <div className="type-muted-text mt-1 text-[13px]">{getRowActionStatus(row)}</div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top sm:px-5 sm:py-3.5">
-                    <div className="type-section-title text-[14px]">{row.reason}</div>
-                    <div className="type-body-text mt-1 text-[13px]">{row.issue}</div>
+                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
+                    <div className="type-section-title text-[15px]">{row.callOutcome ?? "Pending"}</div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top text-[14px] font-medium text-[#111827] sm:px-5 sm:py-3.5">
-                    {row.assignedOwner}
+                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
+                    <div className="type-body-text text-[14px]">{getIssueLabel(row)}</div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top text-[14px] font-medium text-[#111827] sm:px-5 sm:py-3.5">
-                    {row.dueBy}
+                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
+                    <div className="text-[16px] font-bold tracking-[-0.02em] text-[#111827]">
+                      {row.revenueImpact ?? row.revenue}
+                    </div>
                   </td>
-                  <td className="border-b border-[#E5E7EB] px-4 py-3 align-top text-right sm:px-5 sm:py-3.5">
-                    <span
-                      className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${statusClasses[row.statusTone]}`}
-                    >
-                      {getRowActionStatus(row)}
-                    </span>
+                  <td className="border-b border-[#E5E7EB] px-5 py-4 align-top">
+                    <div className="type-body-text text-[14px]">{row.date}</div>
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="type-body-text px-4 py-8 text-center text-[15px] sm:px-6 sm:py-10">
-                  No unresolved cases are currently queued for analyst action.
+                <td colSpan={5} className="px-5 py-10 text-center">
+                  <div className="type-body-text text-[15px]">{emptyMessage}</div>
                 </td>
               </tr>
             )}
@@ -218,598 +389,145 @@ function ReviewQueuePanel({
   );
 }
 
-function ResolutionOutcomesPanel({
-  recoveredRevenue,
-  resolvedCases,
-  escalatedCases,
-  averageDelayHours
-}: {
-  recoveredRevenue: string;
-  resolvedCases: number;
-  escalatedCases: number;
-  averageDelayHours: number;
-}) {
-  const outcomeCards = [
-    {
-      label: "Recovered Revenue",
-      value: recoveredRevenue,
-      detail: "Restored through completed remediation activity"
-    },
-    {
-      label: "Resolved Cases",
-      value: String(resolvedCases),
-      detail: "Interaction records closed without further action"
-    },
-    {
-      label: "Escalated Cases",
-      value: String(escalatedCases),
-      detail: "Interactions routed for management attention"
-    },
-    {
-      label: "Avg. Response Delay",
-      value: `${averageDelayHours.toFixed(1)} hrs`,
-      detail: "Average delay before first documented follow-up"
-    }
-  ];
-
-  return (
-    <section className="surface-secondary motion-fade-up motion-delay-3 p-5">
-      <div className="border-b border-[#E5E7EB] pb-4">
-        <h3 className="type-section-title text-[18px]">Resolution Outcomes</h3>
-        <p className="type-body-text mt-1 text-[14px]">
-          Outcome indicators summarizing remediation performance across the active case set.
-        </p>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {outcomeCards.map((item) => (
-          <div key={item.label} className="surface-primary px-4 py-4">
-            <div className="type-label-text text-[12px]">
-              {item.label}
-            </div>
-            <div className="type-metric-text mt-2 text-[32px] sm:text-[36px]">
-              {item.value}
-            </div>
-            <p className="type-body-text mt-2 text-[13px]">{item.detail}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function SettingToggle({
-  label,
-  description,
-  checked,
-  onToggle
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="surface-primary flex w-full cursor-pointer flex-col items-start gap-4 px-4 py-4 text-left transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] sm:flex-row sm:items-center sm:justify-between"
-    >
-      <div className="min-w-0">
-        <div className="type-section-title text-[15px]">{label}</div>
-        <div className="type-body-text mt-1 text-[14px]">{description}</div>
-      </div>
-      <span
-        className={`relative h-7 w-12 rounded-full transition ${
-          checked ? "bg-[#2563EB]" : "bg-[#D1D5DB]"
-        }`}
-        aria-hidden="true"
-      >
-        <span
-          className={`absolute top-1 h-5 w-5 rounded-full bg-[#FFFFFF] transition ${
-            checked ? "left-6" : "left-1"
-          }`}
-        />
-      </span>
-    </button>
-  );
-}
-
-function SlideOver({
-  panel,
-  activeTab,
-  selectedRange,
-  selectedRow,
-  filteredRows,
-  settingsState,
-  onClose,
-  onToggleSetting,
-  onMarkResolved,
-  onScheduleCallback,
-  onAddNote
-}: {
-  panel: PanelState;
-  activeTab: CallTabId | null;
-  selectedRange: DateRangeKey;
-  selectedRow: CallTableRow | null;
-  filteredRows: CallTableRow[];
-  settingsState: SettingsState;
-  onClose: () => void;
-  onToggleSetting: (key: keyof SettingsState) => void;
-  onMarkResolved: () => void;
-  onScheduleCallback: () => void;
-  onAddNote: () => void;
-}) {
-  if (!panel) return null;
-
-  const totalRevenue = filteredRows.reduce((sum, row) => sum + row.revenueValue, 0);
-  const averageRevenue = filteredRows.length > 0 ? Math.round(totalRevenue / filteredRows.length) : 0;
-  const recoveryActionsOpen = getOpenRecoveryCount(filteredRows);
-  const actionRequiredCount = filteredRows.filter((row) => row.status === "Action Required").length;
-  const underReviewCount = filteredRows.filter((row) => row.status === "Under Review").length;
-  const escalatedCount = filteredRows.filter((row) => row.status === "Escalated").length;
-  const resolvedCount = filteredRows.filter((row) => row.status === "Resolved").length;
-
-  const panelMeta =
-    panel.type === "automations"
-      ? {
-          title: "Workflow Rules",
-          subtitle: "Rule-based routing for conversion failures, SLA breaches, and escalation workflows.",
-          icon: BoltIcon
-        }
-      : panel.type === "statistics"
-        ? {
-            title: "Operational Metrics",
-            subtitle: "Performance summary for the active interaction analysis queue.",
-            icon: StatsIcon
-          }
-        : panel.type === "settings"
-          ? {
-              title: "Configuration",
-              subtitle: "Administrative controls for notification thresholds, record handling, and revenue leakage monitoring.",
-              icon: SettingsIcon
-            }
-          : panel.type === "mail"
-            ? {
-                title: "Operational Inbox",
-                subtitle: "Structured feed for alerts, exports, escalations, and analyst coordination.",
-                icon: MailMiniIcon
-              }
-            : {
-                title: "Inspect Call",
-                subtitle: "Structured inspection of the selected interaction and recommended remediation pathway.",
-                icon: SearchFlagIcon
-              };
-
-  const Icon = panelMeta.icon;
-
-  return (
-    <div className="fixed inset-0 z-50 bg-[#020617]/70 backdrop-blur-[3px]">
-      <button type="button" aria-label="Close panel" className="absolute inset-0 cursor-pointer" onClick={onClose} />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label={panelMeta.title}
-        className="absolute bottom-2 right-2 top-2 z-10 flex w-[calc(100%-1rem)] max-w-[390px] flex-col rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] p-4 shadow-[0_24px_70px_rgba(17,24,39,0.12)] sm:bottom-6 sm:right-6 sm:top-6 sm:p-5"
-      >
-        <div className="flex items-start justify-between gap-4 border-b border-[#E5E7EB] pb-4">
-          <div className="min-w-0">
-            <div className="surface-secondary inline-flex h-10 w-10 items-center justify-center text-[#111827]">
-              <Icon className="h-[18px] w-[18px]" />
-            </div>
-            <h2 className="type-page-title mt-3 text-[24px]">{panelMeta.title}</h2>
-            <p className="type-body-text mt-1 text-[14px]">{panelMeta.subtitle}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="button-secondary-ui inline-flex h-10 w-10 cursor-pointer items-center justify-center text-[22px] leading-none text-[#6B7280] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:text-[#111827] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
-            aria-label="Close panel"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="ui-scrollbar ui-scrollbar-y mt-4 flex-1 space-y-4 overflow-y-auto pr-1 sm:mt-5">
-          {panel.type === "call" && selectedRow ? (
-            <>
-              <div className="surface-secondary p-4">
-                <div className="type-label-text text-[13px]">Interaction Record</div>
-                <div className="type-page-title mt-2 text-[24px]">{selectedRow.caller}</div>
-                <div className="type-body-text mt-1 text-[14px]">
-                  {selectedRow.phone} • {selectedRow.date}
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <DrawerMetric label="Revenue Impact" value={selectedRow.revenueImpact ?? selectedRow.revenue} accent />
-                <DrawerMetric label="Primary Issue" value={selectedRow.primaryIssue ?? selectedRow.reason} />
-                <DrawerMetric label="Action Status" value={getRowActionStatus(selectedRow)} />
-                <DrawerMetric label="Call Outcome" value={selectedRow.callOutcome ?? "Analysis Pending"} />
-                <DrawerMetric label="Intent Level" value={selectedRow.intentLevel ?? "Analysis Pending"} />
-                <DrawerMetric
-                  label="Missed Opportunity"
-                  value={selectedRow.missedOpportunityLabel ?? "Analysis Pending"}
-                />
-              </div>
-
-              <div className="surface-primary p-4">
-                <div className="type-section-title text-[15px]">Interaction Summary</div>
-                <p className="type-body-text mt-3 text-[14px]">{selectedRow.summary}</p>
-              </div>
-
-              <div className="surface-primary p-4">
-                <div className="type-section-title text-[15px]">Recommended Action</div>
-                <p className="type-body-text mt-3 text-[14px]">{selectedRow.recommendedAction}</p>
-              </div>
-
-              {selectedRow.notes.length > 0 ? (
-                <div className="surface-secondary p-4">
-                  <div className="type-section-title text-[15px]">Operational Notes</div>
-                  <div className="mt-3 space-y-2">
-                    {selectedRow.notes.map((note, index) => (
-                      <div key={`${selectedRow.id}-note-${index}`} className="type-body-text surface-primary px-3 py-2 text-[13px]">
-                        {note}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  disabled={getRowActionStatus(selectedRow) === "No Action Needed"}
-                  onClick={onMarkResolved}
-                  className="button-primary-accent inline-flex min-w-[160px] flex-1 cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
-                >
-                  Mark as Resolved
-                </button>
-                <button
-                  type="button"
-                  disabled={getRowActionStatus(selectedRow) === "No Action Needed"}
-                  onClick={onScheduleCallback}
-                  className="button-secondary-ui inline-flex min-w-[160px] flex-1 cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
-                >
-                  Schedule Callback
-                </button>
-                <button
-                  type="button"
-                  onClick={onAddNote}
-                  className="button-secondary-ui inline-flex min-w-[140px] flex-1 cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
-                >
-                  Add Operational Note
-                </button>
-              </div>
-            </>
-          ) : null}
-
-          {panel.type === "automations" ? (
-            <>
-              {[
-                {
-                  title: "SLA Breach Escalation",
-                  detail: "Route inbound interactions that exceed the defined response window to the revenue operations queue.",
-                  status: "Active"
-                },
-                {
-                  title: "High-Intent Conversion Recovery",
-                  detail: "Escalate interactions with revenue exposure above £300 to the assigned analyst owner.",
-                  status: "Draft"
-                },
-                {
-                  title: "Daily Revenue Leakage Export",
-                  detail: "Deliver a structured CSV summary of flagged interactions to the operational inbox each evening.",
-                  status: "Paused"
-                }
-              ].map((item) => (
-                <div key={item.title} className="surface-primary p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="type-section-title text-[15px]">{item.title}</div>
-                    <span className="rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-1 text-[12px] font-semibold text-[#111827]">
-                      {item.status}
-                    </span>
-                  </div>
-                  <p className="type-body-text mt-2 text-[14px]">{item.detail}</p>
-                </div>
-              ))}
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="button-secondary-ui inline-flex w-full cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
-              >
-                Close Panel
-              </button>
-            </>
-          ) : null}
-
-          {panel.type === "statistics" ? (
-            <>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <DrawerMetric label="Analysis Window" value={`${getDateRangeLabel(selectedRange)}`} />
-                <DrawerMetric label="Interaction Queue" value={formatTabLabel(activeTab)} accent />
-                <DrawerMetric label="Estimated Revenue Leakage" value={formatCurrency(totalRevenue)} />
-                <DrawerMetric label="Average Exposure" value={formatCurrency(averageRevenue)} />
-              </div>
-
-              <div className="surface-primary p-4">
-                <div className="type-section-title text-[15px]">Operational Summary</div>
-                <div className="mt-4 space-y-3">
-                  <div className="flex items-center justify-between text-[14px] text-[#6B7280]">
-                    <span>Open action items</span>
-                    <span className="font-semibold text-[#111827]">{recoveryActionsOpen}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[14px] text-[#6B7280]">
-                    <span>Action required</span>
-                    <span className="font-semibold text-[#111827]">{actionRequiredCount}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[14px] text-[#6B7280]">
-                    <span>Under review</span>
-                    <span className="font-semibold text-[#111827]">{underReviewCount}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[14px] text-[#6B7280]">
-                    <span>Escalated</span>
-                    <span className="font-semibold text-[#111827]">{escalatedCount}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[14px] text-[#6B7280]">
-                    <span>Resolved</span>
-                    <span className="font-semibold text-[#111827]">{resolvedCount}</span>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : null}
-
-          {panel.type === "settings" ? (
-            <>
-              <SettingToggle
-                label="Escalation Notifications"
-                description="Trigger analyst notifications when new critical-priority interactions are classified."
-                checked={settingsState.emailAlerts}
-                onToggle={() => onToggleSetting("emailAlerts")}
-              />
-              <SettingToggle
-                label="Record Retention Lock"
-                description="Retain inspected interaction records until an operations manager clears the case."
-                checked={settingsState.reviewLock}
-                onToggle={() => onToggleSetting("reviewLock")}
-              />
-              <SettingToggle
-                label="Revenue Leakage Threshold Alerts"
-                description="Apply elevated queue emphasis to interactions above £300 estimated revenue exposure."
-                checked={settingsState.revenueWarnings}
-                onToggle={() => onToggleSetting("revenueWarnings")}
-              />
-            </>
-          ) : null}
-
-          {panel.type === "mail" ? (
-            <>
-              {[
-                {
-                  title: "Action required queue update",
-                  detail: `Two flagged interactions require outbound follow-up within ${getDateRangeLabel(selectedRange).toLowerCase()}.`,
-                  time: "Just now"
-                },
-                {
-                  title: "Export report generated",
-                  detail: "The latest interaction analysis export is available for downstream operational analysis.",
-                  time: "12 minutes ago"
-                },
-                {
-                  title: "Escalation note recorded",
-                  detail: "One response SLA breach remains without assigned ownership in the front desk queue.",
-                  time: "1 hour ago"
-                }
-              ].map((message) => (
-                <div key={message.title} className="surface-primary p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="type-section-title text-[15px]">{message.title}</div>
-                    <span className="type-muted-text text-[12px]">{message.time}</span>
-                  </div>
-                  <p className="type-body-text mt-2 text-[14px]">{message.detail}</p>
-                </div>
-              ))}
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="button-secondary-ui inline-flex w-full cursor-pointer items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
-              >
-                Return to Overview
-              </button>
-            </>
-          ) : null}
-        </div>
-      </aside>
-    </div>
-  );
-}
-
 export default function HomePage() {
   const router = useRouter();
-  const [activeSidebar, setActiveSidebar] = useState<SidebarItem>("dashboard");
   const [selectedRange, setSelectedRange] = useState<DateRangeKey>("30d");
-  const [activeTab, setActiveTab] = useState<CallTabId | null>(null);
   const [activeTrendBucket, setActiveTrendBucket] = useState<string | null>(null);
   const [rowsState, setRowsState] = useState<DashboardCallRow[]>([]);
   const [dataState, setDataState] = useState<"loading" | "ready" | "error">("loading");
   const [dataError, setDataError] = useState<string | null>(null);
-  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [panel, setPanel] = useState<PanelState>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [settingsState, setSettingsState] = useState<SettingsState>({
-    emailAlerts: true,
-    reviewLock: false,
-    revenueWarnings: true
-  });
 
   const rowsInSelectedRange = useMemo(
     () => rowsState.filter((row) => isWithinDateRange(row.startedAtRaw, selectedRange)),
     [rowsState, selectedRange]
   );
 
-  const rowsByCategory = useMemo(
-    () => (activeTab ? rowsInSelectedRange.filter((row) => row.category === activeTab) : rowsInSelectedRange),
-    [activeTab, rowsInSelectedRange]
-  );
-
-  const filteredRows = useMemo(
+  const focusedRows = useMemo(
     () =>
       activeTrendBucket
-        ? rowsByCategory.filter((row) => row.periodByRange[selectedRange] === activeTrendBucket)
-        : rowsByCategory,
-    [activeTrendBucket, rowsByCategory, selectedRange]
+        ? rowsInSelectedRange.filter((row) => row.periodByRange[selectedRange] === activeTrendBucket)
+        : rowsInSelectedRange,
+    [activeTrendBucket, rowsInSelectedRange, selectedRange]
   );
-  const trendData = useMemo(() => buildTrendData(rowsByCategory, selectedRange), [rowsByCategory, selectedRange]);
+
+  const missedRevenueTrendData = useMemo(
+    () => buildMissedRevenueTrendData(rowsInSelectedRange, selectedRange),
+    [rowsInSelectedRange, selectedRange]
+  );
 
   const totalRevenue = useMemo(
-    () => filteredRows.reduce((sum, row) => sum + row.revenueValue, 0),
-    [filteredRows]
+    () => rowsInSelectedRange.reduce((sum, row) => sum + row.revenueValue, 0),
+    [rowsInSelectedRange]
   );
 
-  const averageResponseDelay = useMemo(() => {
-    if (filteredRows.length === 0) return 0;
-
-    return filteredRows.reduce((sum, row) => sum + row.responseDelayHours, 0) / filteredRows.length;
-  }, [filteredRows]);
-
-  const revenueAtRisk = useMemo(
+  const missedRevenue = useMemo(
     () =>
-      filteredRows
+      rowsInSelectedRange
         .filter((row) => getRowActionStatus(row) === "Needs Action")
         .reduce((sum, row) => sum + row.revenueValue, 0),
-    [filteredRows]
+    [rowsInSelectedRange]
   );
 
-  const revenueRecovered = useMemo(
+  const recoveredRevenue = useMemo(
     () =>
-      filteredRows
+      rowsInSelectedRange
         .filter((row) => getRowActionStatus(row) === "No Action Needed")
         .reduce((sum, row) => sum + row.revenueValue, 0),
-    [filteredRows]
+    [rowsInSelectedRange]
+  );
+
+  const focusedMissedRevenue = useMemo(
+    () =>
+      focusedRows
+        .filter((row) => getRowActionStatus(row) === "Needs Action")
+        .reduce((sum, row) => sum + row.revenueValue, 0),
+    [focusedRows]
   );
 
   const recoveryRate = useMemo(() => {
     if (totalRevenue === 0) return 0;
+    return Math.round((recoveredRevenue / totalRevenue) * 100);
+  }, [recoveredRevenue, totalRevenue]);
 
-    return Math.round((revenueRecovered / totalRevenue) * 100);
-  }, [revenueRecovered, totalRevenue]);
-
-  const selectedRow = useMemo(
-    () => rowsState.find((row) => row.id === selectedRowId) ?? null,
-    [rowsState, selectedRowId]
+  const highIntentMissedCalls = useMemo(
+    () =>
+      rowsInSelectedRange.filter(
+        (row) => row.category === "missed-booking" && getRowActionStatus(row) === "Needs Action"
+      ).length,
+    [rowsInSelectedRange]
   );
 
-  const metricCards = useMemo<MetricCardItem[]>(() => {
+  const averageResponseDelay = useMemo(() => {
+    if (focusedRows.length === 0) return 0;
+
+    return focusedRows.reduce((sum, row) => sum + row.responseDelayHours, 0) / focusedRows.length;
+  }, [focusedRows]);
+
+  const priorityRows = useMemo(
+    () =>
+      sortPriorityRows(
+        focusedRows.filter((row) => getRowActionStatus(row) === "Needs Action")
+      ).slice(0, 4),
+    [focusedRows]
+  );
+
+  const primaryMetrics = useMemo<PrimaryMetricItem[]>(() => {
     if (dataState !== "ready") {
       return [
         {
+          label: "Missed Revenue",
           value: "—",
-          label: "Total Call\nRecords",
-          detail: "Call records loaded for the active analysis window"
+          detail: "Loading revenue exposure for the active analysis window"
         },
         {
+          label: "High-Intent Missed Calls",
           value: "—",
-          label: "Action\nRequired",
-          detail: "Calls currently marked for analyst intervention"
+          detail: "Loading calls that likely should have converted"
         },
         {
+          label: "Recovery Rate",
           value: "—",
-          label: "Resolved\nCases",
-          detail: "Calls remediated and closed within the active window"
+          detail: "Loading recovery performance across analysed calls"
+        },
+        {
+          label: "Calls Analysed",
+          value: "—",
+          detail: "Loading call coverage for the selected period"
         }
       ];
     }
 
-    const totalCallRecords = rowsState.length;
-    const actionRequiredCount = rowsState.filter(
-      (row) => row.status === "Action Required"
-    ).length;
-    const resolvedCount = rowsState.filter((row) => row.status === "Resolved").length;
-
-    // These values are sourced directly from the live Supabase calls table via /api/dashboard-calls.
-    // TODO: Replace any analysis-dependent KPI cards with analysis-table aggregates
-    // once structured analysis records are available in Supabase.
-
     return [
       {
-        value: String(totalCallRecords),
-        label: "Total Call\nRecords",
-        detail: "Call records currently loaded from the calls table"
+        label: "Missed Revenue",
+        value: formatCurrency(missedRevenue),
+        detail: "Estimated revenue still tied to unresolved missed opportunities"
       },
       {
-        value: String(actionRequiredCount),
-        label: "Action\nRequired",
-        detail: "Calls currently marked for analyst intervention"
+        label: "High-Intent Missed Calls",
+        value: String(highIntentMissedCalls),
+        detail: "Actionable calls where commercial intent appears strongest"
       },
       {
-        value: String(resolvedCount),
-        label: "Resolved\nCases",
-        detail: "Calls remediated and closed in the calls table"
+        label: "Recovery Rate",
+        value: `${recoveryRate}%`,
+        detail: `${formatCurrency(recoveredRevenue)} recovered across the selected analysis window`
+      },
+      {
+        label: "Calls Analysed",
+        value: String(rowsInSelectedRange.length),
+        detail: "Calls currently represented in the revenue recovery operating view"
       }
     ];
-  }, [dataState, rowsState]);
-
-  const revenueSummaryItems = useMemo<RevenueSummaryItem[]>(
-    () => {
-      if (dataState !== "ready") {
-        return [
-          {
-            value: "—",
-            label: "Revenue at Risk",
-            detail: "Loading current revenue exposure",
-            tone: "risk"
-          },
-          {
-            value: "—",
-            label: "Revenue Recovered",
-            detail: "Loading remediated revenue outcomes",
-            tone: "recovered"
-          },
-          {
-            value: "—",
-            label: "Recovery Rate",
-            detail: "Loading recovery performance",
-            tone: "neutral"
-          }
-        ];
-      }
-
-      return [
-        {
-          value: formatCurrency(revenueAtRisk),
-          label: "Revenue at Risk",
-          detail: `${filteredRows.filter((row) => getRowActionStatus(row) === "Needs Action").length} interactions currently require revenue recovery action`,
-          tone: "risk"
-        },
-        {
-          value: formatCurrency(revenueRecovered),
-          label: "Revenue Recovered",
-          detail: `${filteredRows.filter((row) => getRowActionStatus(row) === "No Action Needed").length} interactions currently require no further action`,
-          tone: "recovered"
-        },
-        {
-          value: `${recoveryRate}%`,
-          label: "Recovery Rate",
-          detail:
-            totalRevenue > 0
-              ? `${formatCurrency(revenueRecovered)} of ${formatCurrency(totalRevenue)} tracked exposure has been recovered`
-              : "Recovery rate will update when revenue outcomes are recorded",
-          tone: "neutral"
-        }
-      ];
-    },
-    [dataState, filteredRows, recoveryRate, revenueAtRisk, revenueRecovered, totalRevenue]
-  );
+  }, [dataState, highIntentMissedCalls, missedRevenue, recoveredRevenue, recoveryRate, rowsInSelectedRange.length]);
 
   const summaryItems = useMemo(() => {
     if (dataState === "loading") {
       return [
         `Analysis Window: ${getDateRangeLabel(selectedRange)}`,
-        "Flagged Interactions: Loading...",
-        "Estimated Revenue Leakage: Loading...",
+        "Calls Analysed: Loading...",
+        "Missed Revenue: Loading...",
         "Last Updated: Syncing..."
       ];
     }
@@ -817,109 +535,41 @@ export default function HomePage() {
     if (dataState === "error") {
       return [
         `Analysis Window: ${getDateRangeLabel(selectedRange)}`,
-        "Flagged Interactions: Unavailable",
-        "Estimated Revenue Leakage: Unavailable",
+        "Calls Analysed: Unavailable",
+        "Missed Revenue: Unavailable",
         "Last Updated: Connection failed"
       ];
     }
 
-    const leakage = rowsInSelectedRange
-      .filter((row) => getRowActionStatus(row) === "Needs Action")
-      .reduce((sum, row) => sum + row.revenueValue, 0);
-
     return [
       `Analysis Window: ${getDateRangeLabel(selectedRange)}`,
-      `Flagged Interactions: ${rowsInSelectedRange.length}`,
-      `Estimated Revenue Leakage: ${formatCurrency(leakage)}`,
-      `Last Updated: ${getLastUpdatedLabel(rowsInSelectedRange.length > 0 ? rowsInSelectedRange : rowsState)}`
+      `Calls Analysed: ${rowsInSelectedRange.length}`,
+      `Missed Revenue: ${formatCurrency(missedRevenue)}`,
+      activeTrendBucket
+        ? `Focused Period: ${activeTrendBucket}`
+        : `Last Updated: ${getLastUpdatedLabel(rowsInSelectedRange.length > 0 ? rowsInSelectedRange : rowsState)}`
     ];
-  }, [dataState, rowsInSelectedRange, rowsState, selectedRange]);
+  }, [activeTrendBucket, dataState, missedRevenue, rowsInSelectedRange, rowsState, selectedRange]);
 
-  const recentActivityItems = useMemo(() => {
-    const sourceRows = filteredRows.length > 0 ? filteredRows : rowsInSelectedRange;
-
-    if (sourceRows.length === 0) {
-      if (dataState === "loading") {
-        return [
-          {
-            title: "Supabase synchronization in progress",
-            detail: "Call records are currently loading into the operational dashboard view.",
-            time: "Now",
-            tone: "info" as const
-          }
-        ];
-      }
-
-      if (dataState === "error") {
-        return [
-          {
-            title: "Call record retrieval failed",
-            detail: "The dashboard could not load calls from Supabase. Refresh the page after verifying connectivity.",
-            time: "Now",
-            tone: "warning" as const
-          }
-        ];
-      }
-
-      return [
-        {
-          title: "No call activity available",
-          detail: "Supabase returned no call records for the selected analysis window.",
-          time: "Now",
-          tone: "neutral" as const
-        }
-      ];
-    }
-
-    const first = sourceRows[0];
-    const second = sourceRows[1] ?? sourceRows[0];
-    const third = sourceRows[2] ?? sourceRows[0];
-    const mapTone = (tone: CallTableRow["statusTone"]): ActivityTone =>
-      tone === "critical" ? "warning" : tone === "pending" ? "info" : "neutral";
-
-    return [
-      {
-        title: `Classification updated: ${first.caller}`,
-        detail: `${first.reason} remains in ${first.status.toLowerCase()} status.`,
-        time: "3m ago",
-        tone: mapTone(first.statusTone)
-      },
-      {
-        title: `Operational status update: ${second.caller}`,
-        detail: `${second.nextStep}.`,
-        time: "18m ago",
-        tone: mapTone(second.statusTone)
-      },
-      {
-        title: "Estimated revenue leakage recalculated",
-        detail: `${formatCurrency(totalRevenue)} is currently attributed to flagged interactions within ${getDateRangeLabel(selectedRange).toLowerCase()}.`,
-        time: "Today",
-        tone: "info" as const
-      },
-      {
-        title: `Analyst note recorded: ${third.caller}`,
-        detail: `${third.reason} remains classified within the ${formatTabLabel(third.category).toLowerCase()} queue.`,
-        time: "1h ago",
-        tone: "neutral" as const
-      }
-    ];
-  }, [dataState, filteredRows, rowsInSelectedRange, selectedRange, totalRevenue]);
-
-  const tableEmptyMessage = useMemo(() => {
+  const callListEmptyMessage = useMemo(() => {
     if (dataState === "loading") {
-      return "Loading call records from Supabase...";
+      return "Loading analysed calls from the dashboard data service...";
     }
 
     if (dataState === "error") {
-      return dataError ?? "Unable to load call records from Supabase.";
+      return dataError ?? "Unable to load analysed calls right now.";
     }
 
     if (rowsState.length === 0) {
-      return "No call records are currently available in Supabase.";
+      return "No analysed calls are available yet. Upload or process call data to populate the dashboard.";
     }
 
-    return "No interactions match the active analysis criteria.";
-  }, [dataError, dataState, rowsState.length]);
+    if (activeTrendBucket) {
+      return `No calls match the ${activeTrendBucket} trend focus.`;
+    }
+
+    return "No calls match the current operating view.";
+  }, [activeTrendBucket, dataError, dataState, rowsState.length]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -941,8 +591,7 @@ export default function HomePage() {
 
         setRowsState([]);
         setDataState("error");
-        setDataError("Unable to load call records from the dashboard data service.");
-        setSelectedRowId(null);
+        setDataError("Unable to load dashboard data right now. Please try again shortly.");
         return;
       }
 
@@ -958,20 +607,13 @@ export default function HomePage() {
       if (!response.ok) {
         setRowsState([]);
         setDataState("error");
-        setDataError(payload.message || "Unable to load call records from Supabase.");
-        setSelectedRowId(null);
+        setDataError(payload.message || "Unable to load dashboard data right now. Please try again shortly.");
         return;
       }
 
-      const mappedRows = payload.rows ?? [];
-      setRowsState(mappedRows);
+      setRowsState(payload.rows ?? []);
       setDataState("ready");
       setDataError(null);
-      setSelectedRowId((currentSelectedRowId) =>
-        currentSelectedRowId && mappedRows.some((row) => row.id === currentSelectedRowId)
-          ? currentSelectedRowId
-          : null
-      );
     }
 
     void loadCalls();
@@ -993,10 +635,10 @@ export default function HomePage() {
       return;
     }
 
-    if (!trendData.some((point) => point.label === activeTrendBucket)) {
+    if (!missedRevenueTrendData.some((point) => point.label === activeTrendBucket)) {
       setActiveTrendBucket(null);
     }
-  }, [activeTrendBucket, trendData]);
+  }, [activeTrendBucket, missedRevenueTrendData]);
 
   function updateRow(rowId: string, updater: (row: DashboardCallRow) => DashboardCallRow) {
     setRowsState((currentRows) =>
@@ -1044,30 +686,11 @@ export default function HomePage() {
     };
   }
 
-  function handleTabChange(tab: CallTabId) {
-    setActiveTab((currentTab) => (currentTab === tab ? null : tab));
-    setActiveTrendBucket(null);
-    setSelectedRowId(null);
-    setPanel((currentPanel) => (currentPanel?.type === "call" ? null : currentPanel));
-  }
-
-  function handleTrendBucketSelect(label: string) {
-    setActiveTrendBucket((currentBucket) => (currentBucket === label ? null : label));
-    setSelectedRowId(null);
-    setPanel((currentPanel) => (currentPanel?.type === "call" ? null : currentPanel));
-  }
-
-  function handleRowSelect(row: CallTableRow) {
-    setSelectedRowId(row.id);
+  function handleRowOpen(row: DashboardCallRow) {
     router.push(`/call/${row.id}`);
   }
 
-  function handleRecoverCall(row: CallTableRow) {
-    setSelectedRowId(row.id);
-    router.push(`/call/${row.id}`);
-  }
-
-  function handleAssignFollowUp(row: CallTableRow) {
+  function handleAssignFollowUp(row: DashboardCallRow) {
     if (getRowActionStatus(row) === "No Action Needed") {
       setNotice(`${row.caller} does not require further action.`);
       return;
@@ -1087,18 +710,14 @@ export default function HomePage() {
     setNotice(`Follow-up ownership assigned for ${row.caller}.`);
   }
 
-  function handleMarkResolved(row: CallTableRow) {
+  function handleMarkResolved(row: DashboardCallRow) {
     if (getRowActionStatus(row) === "No Action Needed") {
-      setNotice(`${row.caller} is already marked as requiring no further action.`);
+      setNotice(`${row.caller} is already marked as resolved.`);
       return;
     }
 
     updateRow(row.id, buildResolvedRow);
     setNotice(`Case resolved for ${row.caller}.`);
-  }
-
-  function handleClosePanel() {
-    setPanel(null);
   }
 
   async function handleCopyLink() {
@@ -1113,97 +732,11 @@ export default function HomePage() {
   function handleRangeChange(range: DateRangeKey) {
     setSelectedRange(range);
     setActiveTrendBucket(null);
-    setSelectedRowId(null);
-    setPanel((currentPanel) => (currentPanel?.type === "call" ? null : currentPanel));
-    setNotice(`Displaying ${getDateRangeLabel(range)} interaction analysis data.`);
+    setNotice(`Displaying ${getDateRangeLabel(range)} recovery data.`);
   }
 
-  function handleExport() {
-    const rowsToExport = filteredRows;
-    const csvRows = [
-      ["Caller ID", "Call Outcome", "Action Status", "Missed Opportunity", "Revenue Impact", "Analyst Note", "Queue"].join(","),
-      ...rowsToExport.map((row) =>
-        [
-          `"${row.caller}"`,
-          `"${row.callOutcome ?? "Pending"}"`,
-          `"${getRowActionStatus(row)}"`,
-          `"${row.missedOpportunityLabel ?? "Pending"}"`,
-          `"${row.revenue}"`,
-          `"${row.conciseAnalystNote ?? row.analystNote ?? "Analysis pending."}"`,
-          `"${formatTabLabel(row.category)}"`
-        ].join(",")
-      )
-    ];
-
-    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `call-performance-overview-${selectedRange}-${activeTab ?? "all"}-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    setNotice(
-      `Exported ${rowsToExport.length} ${rowsToExport.length === 1 ? "interaction" : "interactions"} from ${getDateRangeLabel(selectedRange)}.`
-    );
-  }
-
-  function handleOpenPanel(nextPanel: ActionPanel) {
-    if (nextPanel === "statistics") {
-      setPanel((currentPanel) => (currentPanel?.type === "statistics" ? null : { type: "statistics" }));
-      return;
-    }
-
-    router.push(nextPanel === "automations" ? "/automations" : "/settings");
-  }
-
-  function handleMarkResolvedFromDetail() {
-    if (!selectedRow) return;
-
-    handleMarkResolved(selectedRow);
-  }
-
-  function handleScheduleCallback() {
-    if (!selectedRow) return;
-
-    if (getRowActionStatus(selectedRow) === "No Action Needed") {
-      setNotice(`${selectedRow.caller} does not require further action.`);
-      return;
-    }
-
-    updateRow(selectedRow.id, (currentRow) => {
-      const nextRow = buildFollowUpRow(currentRow);
-
-      return {
-        ...nextRow,
-        notes: nextRow.notes.includes("Callback scheduling placeholder created from the inspection record.")
-          ? nextRow.notes
-          : [...nextRow.notes, "Callback scheduling placeholder created from the inspection record."]
-      };
-    });
-    setNotice(`Callback scheduling placeholder created for ${selectedRow.caller}.`);
-  }
-
-  function handleAddNote() {
-    if (!selectedRow) return;
-
-    const note = window.prompt(`Enter an operational note for ${selectedRow.caller}`);
-    if (!note?.trim()) return;
-
-    updateRow(selectedRow.id, (currentRow) => ({
-      ...currentRow,
-      notes: [...currentRow.notes, note.trim()]
-    }));
-    setNotice(`Operational note recorded for ${selectedRow.caller}.`);
-  }
-
-  function handleToggleSetting(key: keyof SettingsState) {
-    setSettingsState((currentState) => ({
-      ...currentState,
-      [key]: !currentState[key]
-    }));
+  function handleTrendBucketSelect(label: string) {
+    setActiveTrendBucket((currentBucket) => (currentBucket === label ? null : label));
   }
 
   return (
@@ -1221,77 +754,49 @@ export default function HomePage() {
           onSelectRange={handleRangeChange}
           onCopyLink={handleCopyLink}
         />
-        <div className="mt-5 space-y-4 lg:mt-6 xl:space-y-5">
-          <RevenueSummaryCards items={revenueSummaryItems} />
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_340px] xl:items-start xl:gap-5 2xl:grid-cols-[minmax(0,1.52fr)_360px]">
-            <div className="relative min-w-0 space-y-4 xl:space-y-5">
-              <MetricCards metrics={metricCards} />
-              <div className="min-w-0">
-                <FlaggedCallsTable
-                  activeTab={activeTab}
-                  rows={filteredRows}
-                  selectedRowId={selectedRowId}
-                  emptyMessage={tableEmptyMessage}
-                  onTabChange={handleTabChange}
-                  onRowSelect={handleRowSelect}
-                  onRecoverCall={handleRecoverCall}
-                  onAssignFollowUp={handleAssignFollowUp}
-                  onMarkResolved={handleMarkResolved}
-                />
-              </div>
-              <ActionBar
-                activePanel={panel?.type && panel.type !== "call" && panel.type !== "mail" ? panel.type : null}
-                onExport={handleExport}
-                onOpenPanel={handleOpenPanel}
-              />
 
-              <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr] xl:hidden">
-                <MissedOpportunitiesChart
-                  data={trendData}
-                  activeBucket={activeTrendBucket}
-                  onBucketSelect={handleTrendBucketSelect}
-                  subtitle={`${activeTab ? `${formatTabLabel(activeTab)} classification set` : "All flagged interactions"} within ${getDateRangeLabel(selectedRange).toLowerCase()}. Select a data point to isolate the corresponding reporting period.`}
-                />
-                <RecentActivityPanel items={recentActivityItems} />
-              </div>
-
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)] xl:gap-5">
-                <ReviewQueuePanel rows={filteredRows.filter((row) => getRowActionStatus(row) === "Needs Action")} />
-                <ResolutionOutcomesPanel
-                  recoveredRevenue={formatCurrency(revenueRecovered)}
-                  resolvedCases={filteredRows.filter((row) => getRowActionStatus(row) === "No Action Needed").length}
-                  escalatedCases={filteredRows.filter((row) => row.status === "Escalated").length}
-                  averageDelayHours={averageResponseDelay}
-                />
-              </div>
+        <div className="mt-5 space-y-5 lg:mt-6 xl:space-y-6">
+          {dataState === "error" && dataError ? (
+            <div className="surface-primary border border-[#FECACA] bg-[#FEF2F2] px-5 py-4 text-[14px] text-[#991B1B]">
+              {dataError}
             </div>
+          ) : null}
 
-            <aside className="hidden self-start xl:block xl:space-y-5 xl:border-l xl:border-[#E5E7EB] xl:pl-5 2xl:pl-6">
-              <MissedOpportunitiesChart
-                data={trendData}
-                activeBucket={activeTrendBucket}
-                onBucketSelect={handleTrendBucketSelect}
-                subtitle={`${activeTab ? `${formatTabLabel(activeTab)} classification set` : "All flagged interactions"} within ${getDateRangeLabel(selectedRange).toLowerCase()}. Select a data point to isolate the corresponding reporting period.`}
-              />
-              <RecentActivityPanel items={recentActivityItems} />
-            </aside>
-          </div>
+          <PrimaryMetrics items={primaryMetrics} />
+
+          <PriorityCallbacksPanel
+            rows={priorityRows}
+            selectedRange={selectedRange}
+            onOpenRecord={handleRowOpen}
+            onAssignFollowUp={handleAssignFollowUp}
+            onMarkResolved={handleMarkResolved}
+          />
+
+          <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_340px] xl:items-start xl:gap-5">
+            <MissedOpportunitiesChart
+              title="Missed revenue trend"
+              data={missedRevenueTrendData}
+              activeBucket={activeTrendBucket}
+              onBucketSelect={handleTrendBucketSelect}
+              subtitle="Track where missed revenue is accumulating over time and focus the operating view on a specific reporting period."
+              peakLabel="Peak Missed Revenue"
+              tooltipLabel="missed revenue"
+              valueFormatter={formatCurrency}
+            />
+            <PerformanceSnapshot
+              focusedRows={focusedRows}
+              focusedMissedRevenue={focusedMissedRevenue}
+              averageResponseDelay={averageResponseDelay}
+            />
+          </section>
+
+          <CallsOverviewTable
+            rows={focusedRows}
+            emptyMessage={callListEmptyMessage}
+            onOpenRecord={handleRowOpen}
+          />
         </div>
       </main>
-
-      <SlideOver
-        panel={panel}
-        activeTab={activeTab}
-        selectedRange={selectedRange}
-        selectedRow={selectedRow}
-        filteredRows={filteredRows}
-        settingsState={settingsState}
-        onClose={handleClosePanel}
-        onToggleSetting={handleToggleSetting}
-        onMarkResolved={handleMarkResolvedFromDetail}
-        onScheduleCallback={handleScheduleCallback}
-        onAddNote={handleAddNote}
-      />
     </>
   );
 }
