@@ -1,4 +1,4 @@
-function readRequiredEnv(name: string) {
+function readRequiredServerEnv(name: string) {
   const value = process.env[name];
 
   if (!value) {
@@ -9,9 +9,22 @@ function readRequiredEnv(name: string) {
 }
 
 export function getSupabaseBrowserEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+  if (!url) {
+    throw new Error("Missing required Supabase environment variable: NEXT_PUBLIC_SUPABASE_URL");
+  }
+
+  if (!publishableKey) {
+    throw new Error(
+      "Missing required Supabase environment variable: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+    );
+  }
+
   return {
-    url: readRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    publishableKey: readRequiredEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")
+    url,
+    publishableKey
   };
 }
 
@@ -21,6 +34,6 @@ export function getSupabaseServerEnv() {
   return {
     url,
     publishableKey,
-    serviceRoleKey: readRequiredEnv("SUPABASE_SERVICE_ROLE_KEY")
+    serviceRoleKey: readRequiredServerEnv("SUPABASE_SERVICE_ROLE_KEY")
   };
 }
