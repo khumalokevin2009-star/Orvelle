@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { CallRecordPage } from "@/components/call-record-page";
 import { buildCallRecordView, type AnalysisRecord, type TranscriptRecord } from "@/lib/call-detail";
+import { getDemoCallRecordView } from "@/lib/demo-dashboard-data";
 import {
   callsSelectFields,
   mapSupabaseCallToDashboardRow,
@@ -14,6 +15,12 @@ export default async function CallPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const demoRecord = getDemoCallRecordView(id);
+
+  if (demoRecord) {
+    return <CallRecordPage initialRow={demoRecord.row} detail={demoRecord.detail} />;
+  }
+
   const supabase = createAdminClient();
 
   const { data, error } = await supabase

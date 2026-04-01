@@ -7,6 +7,7 @@ import {
   type SupabaseCallRecord
 } from "@/lib/dashboard-calls";
 import { getAuthenticatedUser } from "@/lib/auth/session";
+import { demoDashboardRows, shouldUseDemoDashboardData } from "@/lib/demo-dashboard-data";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET() {
@@ -88,12 +89,17 @@ export async function GET() {
     console.warn("[dashboard-calls] Supabase returned zero call rows. Dashboard will render the empty state.");
   }
 
-  return NextResponse.json({
-    rows: (calls ?? []).map((call) =>
-      mapSupabaseCallToDashboardRow(
-        call as SupabaseCallRecord,
-        analysisByCallId.get((call as SupabaseCallRecord).id) ?? null
-      )
+  const mappedRows = (calls ?? []).map((call) =>
+    mapSupabaseCallToDashboardRow(
+      call as SupabaseCallRecord,
+      analysisByCallId.get((call as SupabaseCallRecord).id) ?? null
     )
+  );
+
+  const useDemoData = shouldUseDemoDashboardData(mappedRows);
+
+  return NextResponse.json({
+    mode: useDemoData ? "demo" : "live",
+    rows: useDemoData ? demoDashboardRows : mappedRows
   });
 }

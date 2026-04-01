@@ -15,6 +15,10 @@ import {
   isWithinDateRange,
   type DashboardCallRow
 } from "@/lib/dashboard-calls";
+import {
+  demoDashboardMetricSnapshot,
+  demoTrendByRange
+} from "@/lib/demo-dashboard-data";
 
 type PrimaryMetricItem = {
   label: string;
@@ -323,7 +327,7 @@ function CallsOverviewTable({
       <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6">
         <h2 className="type-section-title text-[20px] sm:text-[22px]">Analysed calls</h2>
         <p className="type-body-text mt-2 text-[14px]">
-          Structured view of the calls driving missed revenue, recoveries, and operational follow-up.
+          Recent analysed calls driving missed revenue, recoveries, and operational follow-up.
         </p>
       </div>
 
@@ -394,6 +398,7 @@ export default function HomePage() {
   const [selectedRange, setSelectedRange] = useState<DateRangeKey>("30d");
   const [activeTrendBucket, setActiveTrendBucket] = useState<string | null>(null);
   const [rowsState, setRowsState] = useState<DashboardCallRow[]>([]);
+  const [dashboardMode, setDashboardMode] = useState<"live" | "demo">("live");
   const [dataState, setDataState] = useState<"loading" | "ready" | "error">("loading");
   const [dataError, setDataError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -412,8 +417,11 @@ export default function HomePage() {
   );
 
   const missedRevenueTrendData = useMemo(
-    () => buildMissedRevenueTrendData(rowsInSelectedRange, selectedRange),
-    [rowsInSelectedRange, selectedRange]
+    () =>
+      dashboardMode === "demo"
+        ? demoTrendByRange[selectedRange]
+        : buildMissedRevenueTrendData(rowsInSelectedRange, selectedRange),
+    [dashboardMode, rowsInSelectedRange, selectedRange]
   );
 
   const totalRevenue = useMemo(
@@ -498,6 +506,31 @@ export default function HomePage() {
       ];
     }
 
+    if (dashboardMode === "demo") {
+      return [
+        {
+          label: "Missed Revenue",
+          value: formatCurrency(demoDashboardMetricSnapshot.missedRevenue),
+          detail: "Estimated revenue still exposed across the active callback queue"
+        },
+        {
+          label: "High-Intent Missed Calls",
+          value: String(demoDashboardMetricSnapshot.highIntentMissedCalls),
+          detail: "High-intent calls that should be prioritised for revenue recovery"
+        },
+        {
+          label: "Recovery Rate",
+          value: `${demoDashboardMetricSnapshot.recoveryRate}%`,
+          detail: "Revenue already recovered across the monitored operating window"
+        },
+        {
+          label: "Calls Analysed",
+          value: String(demoDashboardMetricSnapshot.callsAnalysed),
+          detail: "Calls processed through the operating system view"
+        }
+      ];
+    }
+
     return [
       {
         label: "Missed Revenue",
@@ -520,7 +553,7 @@ export default function HomePage() {
         detail: "Calls currently represented in the revenue recovery operating view"
       }
     ];
-  }, [dataState, highIntentMissedCalls, missedRevenue, recoveredRevenue, recoveryRate, rowsInSelectedRange.length]);
+  }, [dashboardMode, dataState, highIntentMissedCalls, missedRevenue, recoveredRevenue, recoveryRate, rowsInSelectedRange.length]);
 
   const summaryItems = useMemo(() => {
     if (dataState === "loading") {
@@ -541,6 +574,15 @@ export default function HomePage() {
       ];
     }
 
+    if (dashboardMode === "demo") {
+      return [
+        `Analysis Window: ${getDateRangeLabel(selectedRange)}`,
+        `Calls Analysed: ${demoDashboardMetricSnapshot.callsAnalysed}`,
+        `Missed Revenue: ${formatCurrency(demoDashboardMetricSnapshot.missedRevenue)}`,
+        activeTrendBucket ? `Focused Period: ${activeTrendBucket}` : "Last Updated: 14 minutes ago"
+      ];
+    }
+
     return [
       `Analysis Window: ${getDateRangeLabel(selectedRange)}`,
       `Calls Analysed: ${rowsInSelectedRange.length}`,
@@ -549,7 +591,7 @@ export default function HomePage() {
         ? `Focused Period: ${activeTrendBucket}`
         : `Last Updated: ${getLastUpdatedLabel(rowsInSelectedRange.length > 0 ? rowsInSelectedRange : rowsState)}`
     ];
-  }, [activeTrendBucket, dataState, missedRevenue, rowsInSelectedRange, rowsState, selectedRange]);
+  }, [activeTrendBucket, dashboardMode, dataState, missedRevenue, rowsInSelectedRange, rowsState, selectedRange]);
 
   const callListEmptyMessage = useMemo(() => {
     if (dataState === "loading") {
@@ -590,12 +632,14 @@ export default function HomePage() {
         }
 
         setRowsState([]);
+        setDashboardMode("live");
         setDataState("error");
         setDataError("Unable to load dashboard data right now. Please try again shortly.");
         return;
       }
 
       const payload = (await response.json()) as {
+        mode?: "live" | "demo";
         message?: string;
         rows?: DashboardCallRow[];
       };
@@ -606,12 +650,14 @@ export default function HomePage() {
 
       if (!response.ok) {
         setRowsState([]);
+        setDashboardMode("live");
         setDataState("error");
         setDataError(payload.message || "Unable to load dashboard data right now. Please try again shortly.");
         return;
       }
 
       setRowsState(payload.rows ?? []);
+      setDashboardMode(payload.mode === "demo" ? "demo" : "live");
       setDataState("ready");
       setDataError(null);
     }
