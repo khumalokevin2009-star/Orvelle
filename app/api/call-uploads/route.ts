@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth/session";
-import { buildCallInsertFromProviderPayload } from "@/lib/call-ingestion";
+import { ingestCall } from "@/lib/call-ingestion";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ACCEPTED_AUDIO_EXTENSIONS,
@@ -226,27 +226,22 @@ async function handleFinalizeUploads(
 
       try {
         const providerPayload = buildManualUploadProviderPayload(upload);
-        const { data: insertedCall, error: insertError } = await supabase
-          .from("calls")
-          .insert(
-            buildCallInsertFromProviderPayload(providerPayload, {
-              callerName: defaultCallerName,
-              assignedOwner: defaultAssignedOwner,
-              recordingFileName: upload.fileName
-            })
-          )
-          .select("id")
-          .single();
+        const ingestedCall = await ingestCall(providerPayload, {
+          supabase,
+          callerName: defaultCallerName,
+          assignedOwner: defaultAssignedOwner,
+          recordingFileName: upload.fileName
+        });
 
-        if (insertError) {
+        if (!ingestedCall.callId) {
           await supabase.storage.from(CALL_RECORDINGS_BUCKET).remove([upload.storagePath]);
-          throw new Error(insertError.message);
+          throw new Error("Call ingestion completed without returning a call record id.");
         }
 
         return {
           clientId,
           ok: true,
-          callId: insertedCall.id as string,
+          callId: ingestedCall.callId,
           storagePath: `${CALL_RECORDINGS_BUCKET}/${upload.storagePath}`
         };
       } catch (error) {

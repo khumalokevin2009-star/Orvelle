@@ -196,6 +196,8 @@ function toConciseSentence(text: string) {
 
 function getStatusLabel(status: string): DashboardCallRow["status"] {
   switch (status) {
+    case "uploaded":
+      return "Action Required";
     case "under_review":
       return "Under Review";
     case "resolved":

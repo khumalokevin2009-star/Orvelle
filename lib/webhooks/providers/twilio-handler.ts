@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildCallInsertFromProviderPayload } from "@/lib/call-ingestion";
+import { ingestCall } from "@/lib/call-ingestion";
 import {
   getTwilioCallDuration,
   getTwilioWebhookEventType,
@@ -76,23 +76,17 @@ async function insertTwilioCall(
   supabase: SupabaseAdminClient,
   parsedWebhook: ParsedTwilioWebhookResult
 ) {
-  const insertPayload = buildCallInsertFromProviderPayload(parsedWebhook.payload, {
+  const ingestedCall = await ingestCall(parsedWebhook.payload, {
+    supabase,
     callerName: parsedWebhook.payload.phone_number,
-    status: parsedWebhook.payload.answered ? "under_review" : "action_required",
     recordingFileName: getRecordingFileName(parsedWebhook.payload.recording_url)
   });
 
-  const { data, error } = await supabase
-    .from("calls")
-    .insert(insertPayload)
-    .select("id")
-    .single();
-
-  if (error) {
-    throw error;
+  if (!ingestedCall.callId) {
+    throw new Error("Twilio call ingestion completed without returning a call id.");
   }
 
-  return data.id as string;
+  return ingestedCall.callId;
 }
 
 async function handleCallCompleted(
