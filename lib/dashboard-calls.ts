@@ -198,6 +198,12 @@ function getStatusLabel(status: string): DashboardCallRow["status"] {
   switch (status) {
     case "uploaded":
       return "Action Required";
+    case "processing":
+      return "Under Review";
+    case "analyzed":
+      return "Under Review";
+    case "failed":
+      return "Escalated";
     case "under_review":
       return "Under Review";
     case "resolved":

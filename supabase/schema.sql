@@ -19,7 +19,7 @@ create table if not exists public.calls (
   source_system text,
   assigned_owner text,
   status text not null default 'action_required' check (
-    status in ('uploaded', 'action_required', 'under_review', 'resolved', 'escalated')
+    status in ('uploaded', 'processing', 'analyzed', 'failed', 'action_required', 'under_review', 'resolved', 'escalated')
   ),
   revenue_estimate numeric(12,2) not null default 0,
   currency_code text not null default 'GBP',

@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth/session";
 import { ingestCall } from "@/lib/call-ingestion";
+import { processCallAfterIngestion } from "@/lib/call-processing";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ACCEPTED_AUDIO_EXTENSIONS,
@@ -204,6 +205,7 @@ async function handleFinalizeUploads(
   supabase: ReturnType<typeof createAdminClient>,
   uploads: FinalizeUploadFile[]
 ) {
+  const completedCallIds: string[] = [];
   const results = await Promise.all(
     uploads.map(async (upload, index) => {
       const clientId = upload.clientId || `${upload.fileName}-${index}`;
@@ -268,6 +270,20 @@ async function handleFinalizeUploads(
       }
     })
   );
+
+  results.forEach((result) => {
+    if (result.ok && result.callId) {
+      completedCallIds.push(result.callId);
+    }
+  });
+
+  if (completedCallIds.length > 0) {
+    after(async () => {
+      await Promise.allSettled(
+        completedCallIds.map((callId) => processCallAfterIngestion(callId, { supabase }))
+      );
+    });
+  }
 
   const successCount = results.filter((result) => result.ok).length;
   const failureCount = results.length - successCount;

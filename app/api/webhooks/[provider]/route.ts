@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { processCallAfterIngestion } from "@/lib/call-processing";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   logWebhookFailure,
@@ -167,6 +168,14 @@ export async function POST(
         duration: ingestionResult.metadata.duration,
         hasRecording: ingestionResult.metadata.hasRecording,
         status: ingestionResult.status
+      });
+    }
+
+    if (ingestionResult.body.callId && !ingestionResult.body.duplicate) {
+      const scheduledCallId = ingestionResult.body.callId;
+
+      after(async () => {
+        await processCallAfterIngestion(scheduledCallId, { supabase });
       });
     }
 
