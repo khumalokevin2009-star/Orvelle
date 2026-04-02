@@ -224,10 +224,11 @@ export function CallRecordPage({
   const recoveredValue = isMissedCallRecovery ? getMissedCallRecoveredValue(row) : 0;
   const resolutionReason = isMissedCallRecovery ? getMissedCallResolutionReason(row) : null;
   const bookingCreatedLabel = isMissedCallRecovery ? getMissedCallBookingCreatedLabel(row) : null;
+  const currentWorkflowStatus = isMissedCallRecovery ? getMissedCallWorkflowStatus(row) : null;
   const backHref = isMissedCallRecovery ? "/missed-calls" : "/dashboard";
   const backLabel = isMissedCallRecovery ? "Back to Missed Calls" : "Back to Dashboard";
   const primaryStatusValue = isMissedCallRecovery
-    ? getMissedCallWorkflowStatus(row)
+    ? (currentWorkflowStatus ?? "Action Required")
     : operationalOutcome;
   const issueIdentified =
     analysisSummary.primaryIssue !== "Pending classification"
@@ -278,6 +279,12 @@ export function CallRecordPage({
     }
 
     if (isMissedCallRecovery) {
+      if (recoveryOutcome === "Not Recovered") {
+        setNoticeTone("error");
+        setNotice("This case is already closed as not recovered.");
+        return;
+      }
+
       setRow(setMissedCallRecoveryOutcome(row, "Not Recovered"));
       setNoticeTone("success");
       setNotice("Case closed as not recovered.");
@@ -306,6 +313,12 @@ export function CallRecordPage({
 
   function handleMarkRecovered() {
     if (!isMissedCallRecovery) {
+      return;
+    }
+
+    if (recoveryOutcome === "Recovered") {
+      setNoticeTone("error");
+      setNotice("This case is already marked as recovered.");
       return;
     }
 
@@ -377,6 +390,12 @@ export function CallRecordPage({
     }
 
     if (isMissedCallRecovery) {
+      if (currentWorkflowStatus === "Escalated") {
+        setNoticeTone("error");
+        setNotice("This case is already escalated.");
+        return;
+      }
+
       setRow(transitionMissedCallWorkflowRow(row, "Escalated"));
       setNoticeTone("success");
       setNotice("Case escalated for immediate recovery handling.");

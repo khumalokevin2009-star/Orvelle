@@ -118,6 +118,7 @@ export function MissedCallRecoveryPage() {
   const [activeFilter, setActiveFilter] = useState<QueueFilter>("All");
   const [sendingCallId, setSendingCallId] = useState<string | null>(null);
   const [currentOwnerLabel, setCurrentOwnerLabel] = useState<string | null>(null);
+  const [dataMode, setDataMode] = useState<"checking" | "live" | "demo" | "error">("checking");
 
   useEffect(() => {
     let isActive = true;
@@ -129,6 +130,9 @@ export function MissedCallRecoveryPage() {
         });
 
         if (!response.ok) {
+          if (isActive) {
+            setDataMode("error");
+          }
           return;
         }
 
@@ -142,21 +146,31 @@ export function MissedCallRecoveryPage() {
         const sourceRows = payload?.liveRows ?? payload?.rows;
 
         if (!isActive || !sourceRows) {
+          if (isActive) {
+            setDataMode("demo");
+          }
           return;
         }
 
         const liveRows = mergeMissedCallWorkflowRows(buildMissedCallRecoveryRows(sourceRows));
 
         if (liveRows.length === 0) {
+          if (isActive) {
+            setDataMode("demo");
+          }
           return;
         }
 
         setRows(liveRows);
+        setDataMode("live");
         setSelectedCallId((currentSelection) =>
           liveRows.some((row) => row.id === currentSelection) ? currentSelection : (liveRows[0]?.id ?? null)
         );
       } catch (error) {
         console.error("[missed-call-recovery] Failed to hydrate live missed-call rows.", error);
+        if (isActive) {
+          setDataMode("error");
+        }
       }
     }
 
@@ -250,6 +264,15 @@ export function MissedCallRecoveryPage() {
   }
 
   async function handleSendFollowUp(id: string) {
+    const targetRow = rows.find((row) => row.id === id);
+
+    if (targetRow && getMissedCallWorkflowStatus(targetRow) === "Resolved") {
+      setSelectedCallId(id);
+      setActivityTone("error");
+      setActivityMessage("Closed recovery cases do not require additional follow-up.");
+      return;
+    }
+
     setSendingCallId(id);
     setActivityMessage(null);
 
@@ -284,7 +307,7 @@ export function MissedCallRecoveryPage() {
   }
 
   function handleMarkResolved(id: string) {
-    updateRowStatus(id, "Resolved", "The missed call has been marked as resolved.");
+    updateRowStatus(id, "Resolved", "The missed call has been closed as not recovered.");
   }
 
   function handleAssignOwner(id: string, nextOwner: string | null) {
@@ -312,6 +335,21 @@ export function MissedCallRecoveryPage() {
         title="Missed Call Recovery"
         description="Review missed inbound calls, assess revenue risk, and trigger follow-up actions."
       />
+
+      {dataMode !== "live" ? (
+        <section className="surface-secondary border px-4 py-4 sm:px-5">
+          <div className="type-section-title text-[15px]">
+            {dataMode === "error" ? "Live recovery data unavailable" : "Recovery queue preview"}
+          </div>
+          <p className="type-body-text mt-2 text-[14px]">
+            {dataMode === "error"
+              ? "The live missed-call feed could not be loaded right now. Showing the existing recovery demo cases instead."
+              : dataMode === "demo"
+                ? "No live missed-call recovery cases are available yet. Showing the existing demo cases until real missed calls are ingested."
+                : "Checking connected call activity and loading any live missed-call recovery cases."}
+          </p>
+        </section>
+      ) : null}
 
       {activityMessage ? (
         <section
@@ -455,6 +493,8 @@ export function MissedCallRecoveryPage() {
               {filteredRows.length > 0 ? (
                 filteredRows.map((row) => {
                   const status = getMissedCallWorkflowStatus(row);
+                  const recoveryOutcome = getMissedCallRecoveryOutcome(row);
+                  const isResolved = status === "Resolved";
                   const isSelected = row.id === selectedCallId;
 
                   return (
@@ -515,17 +555,22 @@ export function MissedCallRecoveryPage() {
                           <button
                             type="button"
                             onClick={() => handleSendFollowUp(row.id)}
-                            disabled={sendingCallId === row.id}
+                            disabled={sendingCallId === row.id || isResolved}
                             className="button-secondary-ui inline-flex min-h-[40px] items-center justify-center px-3.5 text-[13px] transition hover:-translate-y-[1px] hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:shadow-[0_8px_18px_rgba(17,24,39,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF] disabled:shadow-none"
                           >
-                            {sendingCallId === row.id ? "Sending..." : "Send Follow-Up"}
+                            {sendingCallId === row.id ? "Sending..." : isResolved ? "Closed" : "Send Follow-Up"}
                           </button>
                           <button
                             type="button"
                             onClick={() => handleMarkResolved(row.id)}
-                            className="button-primary-accent inline-flex min-h-[40px] items-center justify-center px-3.5 text-[13px] transition hover:-translate-y-[1px] hover:border-[#1D4ED8] hover:bg-[#1D4ED8] hover:shadow-[0_12px_22px_rgba(37,99,235,0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                            disabled={isResolved}
+                            className="button-primary-accent inline-flex min-h-[40px] items-center justify-center px-3.5 text-[13px] transition hover:-translate-y-[1px] hover:border-[#1D4ED8] hover:bg-[#1D4ED8] hover:shadow-[0_12px_22px_rgba(37,99,235,0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80 disabled:shadow-none"
                           >
-                            Mark Resolved
+                            {isResolved
+                              ? recoveryOutcome === "Recovered"
+                                ? "Recovered"
+                                : "Not Recovered"
+                              : "Mark Not Recovered"}
                           </button>
                         </div>
                       </td>
