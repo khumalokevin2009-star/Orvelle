@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { processCallAfterIngestion } from "@/lib/call-processing";
 import { updateProviderConnectionState } from "@/lib/integrations/connection-status";
+import { appendIntegrationError } from "@/lib/integrations/error-log";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   logWebhookFailure,
@@ -18,6 +19,96 @@ function buildRequestMetadata(request: Request, provider: string) {
     path: new URL(request.url).pathname,
     contentType: request.headers.get("content-type")
   };
+}
+
+async function persistIntegrationFailure({
+  accountIdentifier,
+  provider,
+  errorMessage,
+  eventType,
+  callId
+}: {
+  accountIdentifier: string | null;
+  provider: string;
+  errorMessage: string;
+  eventType?: string | null;
+  callId?: string | null;
+}) {
+  if (!accountIdentifier) {
+    return;
+  }
+
+  try {
+    await updateProviderConnectionState({
+      userId: accountIdentifier,
+      provider,
+      accountIdentifier,
+      status: "error",
+      connectionHealth: "error",
+      lastErrorMessage: errorMessage
+    });
+
+    await appendIntegrationError({
+      userId: accountIdentifier,
+      provider,
+      callId,
+      errorMessage,
+      eventType
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown integration failure persistence error.";
+
+    logWebhookWarning("Integration failure could not be persisted.", {
+      provider,
+      accountIdentifier,
+      message,
+      reason: "integration_failure_persist_error"
+    });
+  }
+}
+
+async function persistIntegrationWarning({
+  accountIdentifier,
+  provider,
+  warningMessage,
+  eventType,
+  callId
+}: {
+  accountIdentifier: string | null;
+  provider: string;
+  warningMessage: string;
+  eventType?: string | null;
+  callId?: string | null;
+}) {
+  if (!accountIdentifier) {
+    return;
+  }
+
+  try {
+    await appendIntegrationError({
+      userId: accountIdentifier,
+      provider,
+      callId,
+      errorMessage: warningMessage,
+      eventType,
+      severity: "warning"
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown integration warning persistence error.";
+
+    logWebhookWarning("Integration warning could not be persisted.", {
+      provider,
+      accountIdentifier,
+      message,
+      reason: "integration_warning_persist_error"
+    });
+  }
 }
 
 export async function POST(
@@ -97,6 +188,12 @@ export async function POST(
     const message =
       error instanceof Error ? error.message : "Unable to parse the webhook payload safely.";
 
+    await persistIntegrationFailure({
+      accountIdentifier,
+      provider,
+      errorMessage: message
+    });
+
     logWebhookFailure("Webhook payload parsing failed.", {
       ...requestMetadata,
       status: 400,
@@ -119,6 +216,13 @@ export async function POST(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unable to initialize the webhook ingestion client.";
+
+    await persistIntegrationFailure({
+      accountIdentifier,
+      provider,
+      errorMessage: message,
+      eventType: parsedWebhook.metadata.eventType
+    });
 
     logWebhookFailure("Webhook ingestion could not initialize the admin client.", {
       ...requestMetadata,
@@ -144,9 +248,33 @@ export async function POST(
       parsedWebhook
     });
 
-    if (ingestionResult.body.duplicate) {
+    if (ingestionResult.body.warning) {
+      await persistIntegrationWarning({
+        accountIdentifier,
+        provider,
+        warningMessage: ingestionResult.body.message,
+        eventType: ingestionResult.metadata.eventType,
+        callId: ingestionResult.body.callId ?? null
+      });
+
+      logWebhookWarning("Webhook ingested with warning state.", {
+        ...requestMetadata,
+        accountIdentifier: accountIdentifier ?? undefined,
+        externalCallId: normalizedPayload.external_call_id,
+        eventType: ingestionResult.metadata.eventType,
+        callId: (ingestionResult.body.callId as string | undefined) ?? undefined,
+        providerEvent: ingestionResult.metadata.providerEvent ?? null,
+        answered: ingestionResult.metadata.answered,
+        duration: ingestionResult.metadata.duration,
+        hasRecording: ingestionResult.metadata.hasRecording,
+        status: ingestionResult.status,
+        message: ingestionResult.body.message,
+        reason: "warning"
+      });
+    } else if (ingestionResult.body.duplicate) {
       logWebhookWarning("Duplicate webhook call ignored.", {
         ...requestMetadata,
+        accountIdentifier: accountIdentifier ?? undefined,
         externalCallId: normalizedPayload.external_call_id,
         eventType: ingestionResult.metadata.eventType,
         toNumber: ingestionResult.metadata.toNumber,
@@ -161,6 +289,7 @@ export async function POST(
     } else {
       logWebhookSuccess("Webhook call ingested successfully.", {
         ...requestMetadata,
+        accountIdentifier: accountIdentifier ?? undefined,
         externalCallId: normalizedPayload.external_call_id,
         eventType: ingestionResult.metadata.eventType,
         toNumber: ingestionResult.metadata.toNumber,
@@ -174,7 +303,7 @@ export async function POST(
       });
     }
 
-    if (accountIdentifier) {
+    if (accountIdentifier && !ingestionResult.body.warning) {
       try {
         await updateProviderConnectionState({
           userId: accountIdentifier,
@@ -213,35 +342,17 @@ export async function POST(
     const message =
       error instanceof Error ? error.message : "Unexpected webhook ingestion failure.";
 
-    if (accountIdentifier) {
-      try {
-        await updateProviderConnectionState({
-          userId: accountIdentifier,
-          provider,
-          accountIdentifier,
-          status: "error",
-          connectionHealth: "error",
-          lastEventReceived: normalizedPayload.timestamp,
-          lastErrorMessage: message
-        });
-      } catch (statusError) {
-        const statusMessage =
-          statusError instanceof Error
-            ? statusError.message
-            : "Unknown integration error state update failure.";
-
-        logWebhookWarning("Webhook failure could not update integration error state.", {
-          ...requestMetadata,
-          accountIdentifier,
-          externalCallId: normalizedPayload.external_call_id,
-          reason: "integration_error_state_update_failed",
-          message: statusMessage
-        });
-      }
-    }
+    await persistIntegrationFailure({
+      accountIdentifier,
+      provider,
+      errorMessage: message,
+      eventType: parsedWebhook.metadata.eventType,
+      callId: null
+    });
 
     logWebhookFailure("Webhook ingestion failed.", {
       ...requestMetadata,
+      accountIdentifier: accountIdentifier ?? undefined,
       externalCallId: normalizedPayload.external_call_id,
       eventType: parsedWebhook.metadata.eventType,
       toNumber: parsedWebhook.metadata.toNumber,

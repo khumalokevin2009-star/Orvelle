@@ -21,6 +21,7 @@ type IngestionResult = {
     callId?: string | null;
     duplicate?: boolean;
     updated?: boolean;
+    warning?: boolean;
   };
   metadata: {
     eventType: TwilioWebhookEventType;
@@ -126,6 +127,20 @@ async function handleRecordingCompleted(
   const existingCall = await findExistingCall(supabase, parsedWebhook.payload.external_call_id);
   const recordingUrl = parsedWebhook.payload.recording_url ?? null;
   const recordingFileName = getRecordingFileName(recordingUrl ?? undefined);
+
+  if (!recordingUrl) {
+    return {
+      status: 202,
+      body: {
+        message: existingCall?.id
+          ? "Recording event received without recording_url. Existing call kept intact while waiting for a retry."
+          : "Recording event received without recording_url. Waiting for a follow-up event before attaching audio.",
+        callId: existingCall?.id ?? null,
+        warning: true
+      },
+      metadata: parsedWebhook.metadata
+    };
+  }
 
   if (!existingCall?.id) {
     const callId = await insertTwilioCall(supabase, parsedWebhook);

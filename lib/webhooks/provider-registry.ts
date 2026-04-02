@@ -32,6 +32,7 @@ export type ProviderIngestionResult = {
     callId?: string | null;
     duplicate?: boolean;
     updated?: boolean;
+    warning?: boolean;
   };
   metadata: ParsedWebhookResult["metadata"];
 };
