@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { demoMissedCallRecoveryRows } from "@/lib/demo-dashboard-data";
-import type { DashboardCallRow } from "@/lib/dashboard-calls";
+import { buildMissedCallRecoveryRows, type DashboardCallRow } from "@/lib/dashboard-calls";
 import {
   formatMissedCallLastAction,
   getMissedCallDuration,
@@ -96,6 +96,54 @@ export function MissedCallRecoveryPage() {
   const [activityTone, setActivityTone] = useState<"success" | "error">("success");
   const [activeFilter, setActiveFilter] = useState<QueueFilter>("All");
   const [sendingCallId, setSendingCallId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function hydrateLiveRows() {
+      try {
+        const response = await fetch("/api/dashboard-calls", {
+          cache: "no-store"
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              rows?: DashboardCallRow[];
+              liveRows?: DashboardCallRow[];
+            }
+          | null;
+
+        const sourceRows = payload?.liveRows ?? payload?.rows;
+
+        if (!isActive || !sourceRows) {
+          return;
+        }
+
+        const liveRows = mergeMissedCallWorkflowRows(buildMissedCallRecoveryRows(sourceRows));
+
+        if (liveRows.length === 0) {
+          return;
+        }
+
+        setRows(liveRows);
+        setSelectedCallId((currentSelection) =>
+          liveRows.some((row) => row.id === currentSelection) ? currentSelection : (liveRows[0]?.id ?? null)
+        );
+      } catch (error) {
+        console.error("[missed-call-recovery] Failed to hydrate live missed-call rows.", error);
+      }
+    }
+
+    void hydrateLiveRows();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const filteredRows = useMemo(
     () => rows.filter((row) => matchesFilter(row, activeFilter)),

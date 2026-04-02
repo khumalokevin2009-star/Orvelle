@@ -100,6 +100,7 @@ export async function GET() {
 
   return NextResponse.json({
     mode: useDemoData ? "demo" : "live",
-    rows: useDemoData ? demoDashboardRows : mappedRows
+    rows: useDemoData ? demoDashboardRows : mappedRows,
+    liveRows: mappedRows
   });
 }

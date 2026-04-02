@@ -61,8 +61,11 @@ function createNoteList(row: DashboardCallRow, note: string) {
 }
 
 export function isMissedCallRecoveryRecord(rowOrId: DashboardCallRow | string) {
-  const id = typeof rowOrId === "string" ? rowOrId : rowOrId.id;
-  return id.startsWith("missed-call-");
+  if (typeof rowOrId === "string") {
+    return rowOrId.startsWith("missed-call-");
+  }
+
+  return rowOrId.id.startsWith("missed-call-") || Boolean(rowOrId.workflowStatusLabel && rowOrId.direction === "inbound");
 }
 
 export function getMissedCallWorkflowStatus(row: DashboardCallRow): MissedCallWorkflowStatus {

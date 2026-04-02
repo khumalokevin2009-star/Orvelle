@@ -2,6 +2,7 @@ import type { DateRangeKey } from "@/lib/analysis-window";
 import type { CallTabId, CallTableRow } from "@/data/mock-platform-data";
 
 const dayMs = 24 * 60 * 60 * 1000;
+const defaultMissedCallRecoveryRevenueValue = 240;
 
 const weekdayFormatter = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
 const monthFormatter = new Intl.DateTimeFormat("en-GB", { month: "short" });
@@ -83,6 +84,42 @@ function formatCurrency(value: number, currencyCode: string | null) {
     currency: currencyCode ?? "GBP",
     maximumFractionDigits: 0
   }).format(value);
+}
+
+function getCallDurationSeconds(record: SupabaseCallRecord) {
+  if (!record.ended_at) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.round((new Date(record.ended_at).getTime() - new Date(record.started_at).getTime()) / 1000)
+  );
+}
+
+function isTwilioMissedInboundRecoveryRecord(
+  record: SupabaseCallRecord,
+  analysis: SupabaseAnalysisRecord | null
+) {
+  const source = (record.source_system ?? "").toLowerCase();
+
+  if (!source.includes("twilio")) {
+    return false;
+  }
+
+  if (record.direction === "outbound") {
+    return false;
+  }
+
+  if (record.status === "resolved") {
+    return false;
+  }
+
+  if (analysis?.analysis_status === "completed") {
+    return false;
+  }
+
+  return getCallDurationSeconds(record) === 0;
 }
 
 function getAnalysisIntentLabel(analysis: SupabaseAnalysisRecord | null) {
@@ -566,26 +603,42 @@ export function mapSupabaseCallToDashboardRow(
   const status = getStatusLabel(record.status);
   const category = getCategory(record, status, analysis);
   const currencyCode = record.currency_code ?? "GBP";
+  const isMissedCallRecoveryCase = isTwilioMissedInboundRecoveryRecord(record, analysis);
   const revenueValue = getRevenueImpactValue(record, analysis);
+  const resolvedRevenueValue =
+    isMissedCallRecoveryCase && revenueValue <= 0 ? defaultMissedCallRecoveryRevenueValue : revenueValue;
   const { urgency, urgencyTone } = getUrgency(status);
   const analysisPending = !analysis || analysis.analysis_status !== "completed";
   const intentLevel = getAnalysisIntentLabel(analysis);
-  const callOutcome = getAnalysisOutcomeLabel(analysis);
-  const missedOpportunityLabel = getMissedOpportunityLabel(analysis);
-  const primaryIssue = getPrimaryIssueLabel(analysis, getReason(record, status, category));
+  const callOutcome = isMissedCallRecoveryCase ? "No Callback" : getAnalysisOutcomeLabel(analysis);
+  const missedOpportunityLabel = isMissedCallRecoveryCase ? "Yes" : getMissedOpportunityLabel(analysis);
+  const primaryIssue = isMissedCallRecoveryCase
+    ? "Missed inbound call"
+    : getPrimaryIssueLabel(analysis, getReason(record, status, category));
   const actionStatus = getActionStatus(status, analysis);
   const { noteTop, noteBottom } = getNoteMeta(record, status, category, analysis);
   const conciseAnalystNote = getConciseAnalystNote(record, actionStatus, primaryIssue, analysis);
+  const recoverySummary = `The inbound call reached the Twilio forwarding workflow, but the forwarded destination did not connect. Orvelle has placed the enquiry into the missed call recovery queue for callback action.`;
+  const recoveryNextStep = "Send follow-up and complete a recovery callback.";
+  const recoveryAction =
+    "Immediate outbound recovery required. The inbound caller did not reach a connected destination and should receive a callback within the active recovery window.";
+  const recoveryNotes = [
+    "Inbound Twilio forwarding attempt did not connect to the destination number.",
+    `Caller: ${record.caller_phone ?? "Unknown number"}`,
+    `Forwarding source: ${formatDisplayLabel(record.source_system, "Twilio")}`
+  ];
 
   return {
     id: record.id,
     externalId: record.external_id,
     caller: record.caller_name,
     time: formatRelativeTime(record.started_at),
-    issue: getIssue(record, status, analysis),
+    issue: isMissedCallRecoveryCase ? "Missed call recovery queue" : getIssue(record, status, analysis),
     reason: primaryIssue,
     recommendedAction:
-      isManualUpload(record) && status !== "Resolved"
+      isMissedCallRecoveryCase
+        ? recoveryAction
+        : isManualUpload(record) && status !== "Resolved"
         ? "Manual inspection required. The recording has been uploaded successfully, but transcript extraction and structured analysis have not yet been completed. Review the interaction and assign an operational classification."
         : getRecommendedAction(status, category, analysis),
     status,
@@ -596,34 +649,60 @@ export function mapSupabaseCallToDashboardRow(
     assignedOwner: formatDisplayLabel(record.assigned_owner, "Unassigned"),
     dueBy: getDueBy(record.started_at, status, category),
     responseDelayHours: getResponseDelayHours(status, category),
-    revenue: formatCurrency(revenueValue, currencyCode),
-    revenueValue,
-    noteTop,
-    noteBottom,
+    revenue: formatCurrency(resolvedRevenueValue, currencyCode),
+    revenueValue: resolvedRevenueValue,
+    noteTop: isMissedCallRecoveryCase ? "Inbound call missed -" : noteTop,
+    noteBottom: isMissedCallRecoveryCase ? "follow-up required" : noteBottom,
     category,
     periodByRange: getPeriodByRange(record.started_at),
     phone: record.caller_phone ?? "Phone number placeholder",
     date: formatCallTimestamp(record.started_at),
-    summary: getSummary(record, status, category, analysis),
-    nextStep: getNextStep(record, status, category, analysis),
-    notes: getNotes(record, analysis),
+    summary: isMissedCallRecoveryCase ? recoverySummary : getSummary(record, status, category, analysis),
+    nextStep: isMissedCallRecoveryCase ? recoveryNextStep : getNextStep(record, status, category, analysis),
+    notes: isMissedCallRecoveryCase ? recoveryNotes : getNotes(record, analysis),
     analysisPending,
     analysisStatus: analysis?.analysis_status ?? undefined,
     intentLevel,
     callOutcome,
     missedOpportunityLabel,
-    missedOpportunityDetected: analysis?.missed_opportunity ?? null,
+    missedOpportunityDetected: isMissedCallRecoveryCase ? true : analysis?.missed_opportunity ?? null,
     primaryIssue,
-    revenueImpact: formatCurrency(revenueValue, currencyCode),
-    revenueImpactValue: revenueValue,
-    analystNote: conciseAnalystNote,
-    conciseAnalystNote,
+    revenueImpact: formatCurrency(resolvedRevenueValue, currencyCode),
+    revenueImpactValue: resolvedRevenueValue,
+    analystNote: isMissedCallRecoveryCase
+      ? "Forwarded Twilio call was not answered and requires follow-up."
+      : conciseAnalystNote,
+    conciseAnalystNote: isMissedCallRecoveryCase
+      ? "Forwarded Twilio call was not answered."
+      : conciseAnalystNote,
     startedAtRaw: record.started_at,
     updatedAtRaw: record.updated_at,
     direction: record.direction,
     recordingFilename: record.recording_filename,
-    sourceSystem: record.source_system
+    sourceSystem: record.source_system,
+    workflowStatusLabel: isMissedCallRecoveryCase ? "Action Required" : undefined
   };
+}
+
+export function isMissedCallRecoveryCandidate(row: DashboardCallRow) {
+  if (row.id.startsWith("missed-call-")) {
+    return true;
+  }
+
+  return row.direction === "inbound" && Boolean(row.workflowStatusLabel);
+}
+
+export function buildMissedCallRecoveryRows(rows: DashboardCallRow[]) {
+  return rows
+    .filter(isMissedCallRecoveryCandidate)
+    .sort((left, right) => {
+      const revenueDelta = right.revenueValue - left.revenueValue;
+      if (revenueDelta !== 0) {
+        return revenueDelta;
+      }
+
+      return new Date(right.startedAtRaw).getTime() - new Date(left.startedAtRaw).getTime();
+    });
 }
 
 export function isWithinDateRange(startedAt: string, range: DateRangeKey) {
