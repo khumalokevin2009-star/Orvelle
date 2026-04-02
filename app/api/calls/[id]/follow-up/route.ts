@@ -3,6 +3,7 @@ import { getAuthenticatedUser } from "@/lib/auth/session";
 import { demoMissedCallRecoveryRows } from "@/lib/demo-dashboard-data";
 import { analysisSelectFields, callsSelectFields, mapSupabaseCallToDashboardRow, type SupabaseAnalysisRecord, type SupabaseCallRecord } from "@/lib/dashboard-calls";
 import { sendFollowUpForCall } from "@/lib/follow-up-sms";
+import { getMissedCallRecoverySettings } from "@/lib/missed-call-recovery-settings";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(
@@ -24,11 +25,13 @@ export async function POST(
   }
 
   const demoRow = demoMissedCallRecoveryRows.find((row) => row.id === id);
+  const missedCallRecoverySettings = await getMissedCallRecoverySettings(user.id).catch(() => null);
 
   if (demoRow) {
     const result = await sendFollowUpForCall({
       row: demoRow,
-      forceMock: true
+      forceMock: true,
+      settings: missedCallRecoverySettings ?? undefined
     });
 
     console.info("[follow-up] Demo follow-up request completed.", {
@@ -89,7 +92,10 @@ export async function POST(
     callResult.data as SupabaseCallRecord,
     analysisResult.error ? null : (analysisResult.data as SupabaseAnalysisRecord | null)
   );
-  const result = await sendFollowUpForCall({ row });
+  const result = await sendFollowUpForCall({
+    row,
+    settings: missedCallRecoverySettings ?? undefined
+  });
 
   if (!result.ok) {
     console.error("[follow-up] Follow-up request failed.", {

@@ -1,6 +1,11 @@
 import "server-only";
 
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
+import {
+  defaultMissedCallRecoverySettings,
+  renderMissedCallRecoverySmsTemplate,
+  type MissedCallRecoverySettings
+} from "@/lib/missed-call-recovery-settings";
 
 type FollowUpSendSuccess = {
   ok: true;
@@ -41,11 +46,32 @@ function getCallerFirstName(caller: string) {
 }
 
 function buildFollowUpSmsBody(row: DashboardCallRow) {
-  const firstName = getCallerFirstName(row.caller);
-  const issue = row.primaryIssue ?? row.reason;
-  const nextStep = row.nextStep || row.recommendedAction;
+  return buildFollowUpSmsBodyFromSettings({
+    row,
+    settings: defaultMissedCallRecoverySettings
+  });
+}
 
-  return `Hi ${firstName}, thanks for your recent call. We're following up on your enquiry about ${issue.toLowerCase()}. Next step: ${nextStep}. Reply to this message or call us back to continue.`;
+function buildFollowUpSmsBodyFromSettings({
+  row,
+  settings
+}: {
+  row: DashboardCallRow;
+  settings: MissedCallRecoverySettings;
+}) {
+  const firstName = getCallerFirstName(row.caller);
+  const callbackNumber = settings.callbackNumber || row.phone;
+  const renderedTemplate = renderMissedCallRecoverySmsTemplate({
+    template: settings.smsTemplate || defaultMissedCallRecoverySettings.smsTemplate,
+    businessName: settings.businessName || defaultMissedCallRecoverySettings.businessName,
+    callbackWindow:
+      settings.defaultCallbackWindow || defaultMissedCallRecoverySettings.defaultCallbackWindow,
+    phoneNumber: callbackNumber
+  });
+
+  return renderedTemplate.startsWith("Hi ")
+    ? renderedTemplate
+    : `Hi ${firstName}, ${renderedTemplate.charAt(0).toLowerCase()}${renderedTemplate.slice(1)}`;
 }
 
 async function sendTwilioSms({
@@ -120,10 +146,12 @@ async function sendTwilioSms({
 
 export async function sendFollowUpForCall({
   row,
-  forceMock = false
+  forceMock = false,
+  settings
 }: {
   row: DashboardCallRow;
   forceMock?: boolean;
+  settings?: MissedCallRecoverySettings;
 }): Promise<FollowUpSendResult> {
   if (forceMock) {
     return {
@@ -144,6 +172,6 @@ export async function sendFollowUpForCall({
 
   return sendTwilioSms({
     to: row.phone,
-    body: buildFollowUpSmsBody(row)
+    body: settings ? buildFollowUpSmsBodyFromSettings({ row, settings }) : buildFollowUpSmsBody(row)
   });
 }

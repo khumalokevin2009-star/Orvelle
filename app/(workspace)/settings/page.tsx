@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SettingToggle } from "@/components/setting-toggle";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 
@@ -54,6 +54,8 @@ function Field({
 
 const inputClassName =
   "h-12 w-full rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-[15px] text-[#111827] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]";
+const textareaClassName =
+  "min-h-[144px] w-full rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 py-3 text-[15px] text-[#111827] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]";
 
 const disabledUserAccessButtonClassName =
   "inline-flex items-center justify-center rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] text-[#6B7280] opacity-50 cursor-not-allowed pointer-events-none";
@@ -62,17 +64,29 @@ export default function SettingsPage() {
   const [businessProfile, setBusinessProfile] = useState({
     businessName: "Cotrnested Services Ltd.",
     businessSector: "Residential HVAC Services",
-    contactEmail: "ops@cotrnested.com"
+    contactEmail: "ops@cotrnested.com",
+    callbackNumber: "",
+    businessHours: "Mon-Fri, 08:00-18:00"
   });
   const [analysisWindow, setAnalysisWindow] = useState({
     defaultInterval: "Last 30 Days",
     timezone: "Europe/London"
+  });
+  const [missedCallRecovery, setMissedCallRecovery] = useState({
+    defaultCallbackWindow: "2 business hours",
+    autoFollowUpEnabled: true,
+    smsTemplate:
+      "Sorry we missed your call. This is {{businessName}}. We’ve received your enquiry and will call you back within {{callbackWindow}}. If urgent, call us on {{phoneNumber}}."
   });
   const [notificationPreferences, setNotificationPreferences] = useState({
     flaggedInteractionAlerts: true,
     revenueLeakageAlerts: true,
     weeklyDigest: false
   });
+  const [isLoadingRecoverySettings, setIsLoadingRecoverySettings] = useState(true);
+  const [isSavingRecoverySettings, setIsSavingRecoverySettings] = useState(false);
+  const [recoverySettingsNotice, setRecoverySettingsNotice] = useState<string | null>(null);
+  const [recoverySettingsNoticeTone, setRecoverySettingsNoticeTone] = useState<"success" | "error">("success");
 
   const userAccessRecords: UserAccessRecord[] = [
     {
@@ -102,6 +116,154 @@ export default function SettingsPage() {
     }));
   }
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadRecoverySettings() {
+      try {
+        const response = await fetch("/api/settings/missed-call-recovery", {
+          method: "GET"
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              settings?: {
+                businessName?: string;
+                callbackNumber?: string;
+                defaultCallbackWindow?: string;
+                businessHours?: string;
+                autoFollowUpEnabled?: boolean;
+                smsTemplate?: string;
+              };
+              message?: string;
+            }
+          | null;
+
+        if (!response.ok || !payload?.settings) {
+          throw new Error(payload?.message || "Unable to load missed call recovery settings.");
+        }
+
+        if (!isMounted) {
+          return;
+        }
+
+        setBusinessProfile((current) => ({
+          ...current,
+          businessName: payload.settings?.businessName || current.businessName,
+          callbackNumber: payload.settings?.callbackNumber || "",
+          businessHours: payload.settings?.businessHours || current.businessHours
+        }));
+        setMissedCallRecovery({
+          defaultCallbackWindow:
+            payload.settings?.defaultCallbackWindow || "2 business hours",
+          autoFollowUpEnabled: payload.settings?.autoFollowUpEnabled ?? true,
+          smsTemplate:
+            payload.settings?.smsTemplate ||
+            "Sorry we missed your call. This is {{businessName}}. We’ve received your enquiry and will call you back within {{callbackWindow}}. If urgent, call us on {{phoneNumber}}."
+        });
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setRecoverySettingsNoticeTone("error");
+        setRecoverySettingsNotice(
+          error instanceof Error
+            ? error.message
+            : "Unable to load missed call recovery settings."
+        );
+      } finally {
+        if (isMounted) {
+          setIsLoadingRecoverySettings(false);
+        }
+      }
+    }
+
+    void loadRecoverySettings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const smsTemplatePreview = useMemo(() => {
+    return missedCallRecovery.smsTemplate
+      .replaceAll("{{businessName}}", businessProfile.businessName || "Your business")
+      .replaceAll(
+        "{{callbackWindow}}",
+        missedCallRecovery.defaultCallbackWindow || "the next business window"
+      )
+      .replaceAll("{{phoneNumber}}", businessProfile.callbackNumber || "your callback number");
+  }, [
+    businessProfile.businessName,
+    businessProfile.callbackNumber,
+    missedCallRecovery.defaultCallbackWindow,
+    missedCallRecovery.smsTemplate
+  ]);
+
+  async function handleSaveMissedCallRecoverySettings() {
+    if (!missedCallRecovery.defaultCallbackWindow.trim()) {
+      setRecoverySettingsNoticeTone("error");
+      setRecoverySettingsNotice("Default callback window is required.");
+      return;
+    }
+
+    if (missedCallRecovery.autoFollowUpEnabled && !businessProfile.callbackNumber.trim()) {
+      setRecoverySettingsNoticeTone("error");
+      setRecoverySettingsNotice("Callback number is required when auto follow-up is enabled.");
+      return;
+    }
+
+    if (missedCallRecovery.autoFollowUpEnabled && !missedCallRecovery.smsTemplate.trim()) {
+      setRecoverySettingsNoticeTone("error");
+      setRecoverySettingsNotice("SMS template is required when auto follow-up is enabled.");
+      return;
+    }
+
+    setIsSavingRecoverySettings(true);
+    setRecoverySettingsNotice(null);
+
+    try {
+      const response = await fetch("/api/settings/missed-call-recovery", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          settings: {
+            businessName: businessProfile.businessName,
+            callbackNumber: businessProfile.callbackNumber,
+            defaultCallbackWindow: missedCallRecovery.defaultCallbackWindow,
+            businessHours: businessProfile.businessHours,
+            autoFollowUpEnabled: missedCallRecovery.autoFollowUpEnabled,
+            smsTemplate: missedCallRecovery.smsTemplate
+          }
+        })
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            message?: string;
+          }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to save missed call recovery settings.");
+      }
+
+      setRecoverySettingsNoticeTone("success");
+      setRecoverySettingsNotice(payload?.message || "Missed call recovery settings saved.");
+    } catch (error) {
+      setRecoverySettingsNoticeTone("error");
+      setRecoverySettingsNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to save missed call recovery settings."
+      );
+    } finally {
+      setIsSavingRecoverySettings(false);
+    }
+  }
+
   return (
     <main>
       <WorkspacePageHeader
@@ -121,7 +283,7 @@ export default function SettingsPage() {
         <section className="space-y-4">
           <SectionCard
             title="Business Profile"
-            description="Maintain the core business information used throughout reporting and operational workflows."
+            description="Maintain the core business information used throughout reporting, follow-up messaging, and operational workflows."
           >
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
@@ -165,6 +327,119 @@ export default function SettingsPage() {
                   className={inputClassName}
                 />
               </Field>
+              <Field label="Callback Number">
+                <input
+                  type="tel"
+                  value={businessProfile.callbackNumber}
+                  onChange={(event) =>
+                    setBusinessProfile((current) => ({
+                      ...current,
+                      callbackNumber: event.target.value
+                    }))
+                  }
+                  placeholder="+44 7900 261143"
+                  className={inputClassName}
+                />
+              </Field>
+              <Field label="Business Hours">
+                <input
+                  type="text"
+                  value={businessProfile.businessHours}
+                  onChange={(event) =>
+                    setBusinessProfile((current) => ({
+                      ...current,
+                      businessHours: event.target.value
+                    }))
+                  }
+                  placeholder="Mon-Fri, 08:00-18:00"
+                  className={inputClassName}
+                />
+              </Field>
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Missed Call Recovery"
+            description="Configure the default callback promise, automated follow-up behavior, and SMS copy used when recovery actions are triggered from missed call workflows."
+            actions={
+              <button
+                type="button"
+                onClick={handleSaveMissedCallRecoverySettings}
+                disabled={isLoadingRecoverySettings || isSavingRecoverySettings}
+                className="button-secondary-ui inline-flex h-11 items-center justify-center px-4 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
+              >
+                {isLoadingRecoverySettings
+                  ? "Loading..."
+                  : isSavingRecoverySettings
+                    ? "Saving..."
+                    : "Save Recovery Settings"}
+              </button>
+            }
+          >
+            {recoverySettingsNotice ? (
+              <div
+                className={`mb-4 rounded-[12px] border px-4 py-3 text-[13px] ${
+                  recoverySettingsNoticeTone === "error"
+                    ? "border-[#F2D8D8] bg-[#FFF6F6] text-[#A24E4E]"
+                    : "border-[#E5E7EB] bg-[#F9FAFB] text-[#374151]"
+                }`}
+              >
+                {recoverySettingsNotice}
+              </div>
+            ) : null}
+
+            <div className="space-y-4">
+              <div className="rounded-[12px] border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-[13px] text-[#6B7280]">
+                Business name, callback number, and business hours are sourced from the Business Profile section above.
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Default Callback Window">
+                  <input
+                    type="text"
+                    value={missedCallRecovery.defaultCallbackWindow}
+                    onChange={(event) =>
+                      setMissedCallRecovery((current) => ({
+                        ...current,
+                        defaultCallbackWindow: event.target.value
+                      }))
+                    }
+                    placeholder="2 business hours"
+                    className={inputClassName}
+                  />
+                </Field>
+                <div className="md:pt-[28px]">
+                  <SettingToggle
+                    label="Auto Follow-Up"
+                    description="Automatically use the saved missed-call SMS template when follow-up automation is enabled."
+                    checked={missedCallRecovery.autoFollowUpEnabled}
+                    onToggle={() =>
+                      setMissedCallRecovery((current) => ({
+                        ...current,
+                        autoFollowUpEnabled: !current.autoFollowUpEnabled
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <Field label="Default Missed-Call SMS Template">
+                <textarea
+                  value={missedCallRecovery.smsTemplate}
+                  onChange={(event) =>
+                    setMissedCallRecovery((current) => ({
+                      ...current,
+                      smsTemplate: event.target.value
+                    }))
+                  }
+                  className={textareaClassName}
+                />
+              </Field>
+
+              <div className="rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 py-4">
+                <div className="type-label-text text-[12px]">Template Preview</div>
+                <p className="type-body-text mt-2 text-[14px] leading-6">{smsTemplatePreview}</p>
+              </div>
             </div>
           </SectionCard>
 
