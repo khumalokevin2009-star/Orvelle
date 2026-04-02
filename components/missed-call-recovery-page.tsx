@@ -10,6 +10,8 @@ import {
   assignMissedCallWorkflowOwner,
   formatMissedCallLastAction,
   getMissedCallDuration,
+  getMissedCallRecoveredValue,
+  getMissedCallRecoveryOutcome,
   getMissedCallWorkflowStatus,
   getOwnerLabelFromAuthUser,
   isMissedCallAssignedToOwner,
@@ -208,15 +210,18 @@ export function MissedCallRecoveryPage() {
       return status === "Action Required" || status === "Escalated";
     }).length;
     const revenueAtRisk = rows
-      .filter((row) => getMissedCallWorkflowStatus(row) !== "Resolved")
+      .filter((row) => getMissedCallRecoveryOutcome(row) !== "Recovered")
       .reduce((sum, row) => sum + row.revenueValue, 0);
-    const resolvedCount = rows.filter((row) => getMissedCallWorkflowStatus(row) === "Resolved").length;
-    const recoveryRate = rows.length > 0 ? Math.round((resolvedCount / rows.length) * 100) : 0;
+    const recoveredCount = rows.filter((row) => getMissedCallRecoveryOutcome(row) === "Recovered").length;
+    const recoveredValue = rows.reduce((sum, row) => sum + getMissedCallRecoveredValue(row), 0);
+    const recoveryRate = rows.length > 0 ? Math.round((recoveredCount / rows.length) * 100) : 0;
 
     return {
       missedCallsToday,
       awaitingFollowUp,
       revenueAtRisk,
+      recoveredCount,
+      recoveredValue,
       recoveryRate
     };
   }, [rows]);
@@ -346,7 +351,7 @@ export function MissedCallRecoveryPage() {
         <SummaryCard
           label="Recovery Rate"
           value={`${summary.recoveryRate}%`}
-          detail="Share of missed-call cases already recovered or closed."
+          detail={`${formatCurrency(summary.recoveredValue)} recovered across ${summary.recoveredCount} recovered case${summary.recoveredCount === 1 ? "" : "s"}.`}
         />
       </section>
 

@@ -1,6 +1,7 @@
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
 
 export type MissedCallWorkflowStatus = NonNullable<DashboardCallRow["workflowStatusLabel"]>;
+export type MissedCallRecoveryOutcome = NonNullable<DashboardCallRow["recoveryOutcomeLabel"]>;
 export type MissedCallHistoryEventType =
   | "missed_call_detected"
   | "follow_up_sent"
@@ -27,6 +28,18 @@ type MissedCallWorkflowOverride = Pick<
   | "nextStep"
   | "recommendedAction"
   | "assignedOwner"
+  | "actionStatus"
+  | "callOutcome"
+  | "missedOpportunityLabel"
+  | "missedOpportunityDetected"
+  | "revenueImpact"
+  | "revenueImpactValue"
+  | "analystNote"
+  | "conciseAnalystNote"
+  | "recoveryOutcomeLabel"
+  | "recoveredValue"
+  | "resolutionReason"
+  | "bookingCreated"
   | "updatedAtRaw"
   | "notes"
 >;
@@ -171,6 +184,7 @@ export function buildMissedCallHistory(row: DashboardCallRow): MissedCallHistory
   }
 
   const workflowStatus = getMissedCallWorkflowStatus(row);
+  const outcome = getMissedCallRecoveryOutcome(row);
 
   if (workflowStatus === "Follow-Up Sent" && !hasHistoryType(parsedEntries, "follow_up_sent")) {
     parsedEntries.push(
@@ -196,7 +210,9 @@ export function buildMissedCallHistory(row: DashboardCallRow): MissedCallHistory
     parsedEntries.push(
       buildSyntheticHistoryEntry(
         "resolved",
-        "Recovery workflow was completed and the case was marked resolved.",
+        outcome === "Recovered"
+          ? "Recovery workflow was completed and a booking was created."
+          : "Recovery workflow was completed and the case was closed without a recovered booking.",
         row.updatedAtRaw ?? row.startedAtRaw
       )
     );
@@ -259,6 +275,60 @@ export function isMissedCallAssignedToOwner(row: DashboardCallRow, ownerLabel: s
 
 export function isMissedCallUnassigned(row: DashboardCallRow) {
   return row.assignedOwner.trim().toLowerCase() === "unassigned";
+}
+
+export function getMissedCallRecoveryOutcome(row: DashboardCallRow): MissedCallRecoveryOutcome {
+  if (row.recoveryOutcomeLabel) {
+    return row.recoveryOutcomeLabel;
+  }
+
+  if (row.bookingCreated === true || row.callOutcome === "Converted") {
+    return "Recovered";
+  }
+
+  if (getMissedCallWorkflowStatus(row) === "Resolved") {
+    return "Not Recovered";
+  }
+
+  return "Pending";
+}
+
+export function getMissedCallRecoveredValue(row: DashboardCallRow) {
+  if (typeof row.recoveredValue === "number") {
+    return row.recoveredValue;
+  }
+
+  return getMissedCallRecoveryOutcome(row) === "Recovered" ? row.revenueValue : 0;
+}
+
+export function getMissedCallResolutionReason(row: DashboardCallRow) {
+  if (row.resolutionReason?.trim()) {
+    return row.resolutionReason.trim();
+  }
+
+  const outcome = getMissedCallRecoveryOutcome(row);
+
+  if (outcome === "Recovered") {
+    return "Booking created after recovery follow-up.";
+  }
+
+  if (outcome === "Not Recovered") {
+    return "Recovery window closed without booking.";
+  }
+
+  return "Recovery outcome still pending.";
+}
+
+export function getMissedCallBookingCreatedLabel(row: DashboardCallRow) {
+  if (row.bookingCreated === true) {
+    return "Yes";
+  }
+
+  if (row.bookingCreated === false) {
+    return "No";
+  }
+
+  return getMissedCallRecoveryOutcome(row) === "Pending" ? "Pending" : "No";
 }
 
 export function getMissedCallWorkflowStatus(row: DashboardCallRow): MissedCallWorkflowStatus {
@@ -368,6 +438,18 @@ function persistMissedCallWorkflowRow(row: DashboardCallRow) {
     nextStep: row.nextStep,
     recommendedAction: row.recommendedAction,
     assignedOwner: row.assignedOwner,
+    actionStatus: row.actionStatus,
+    callOutcome: row.callOutcome,
+    missedOpportunityLabel: row.missedOpportunityLabel,
+    missedOpportunityDetected: row.missedOpportunityDetected,
+    revenueImpact: row.revenueImpact,
+    revenueImpactValue: row.revenueImpactValue,
+    analystNote: row.analystNote,
+    conciseAnalystNote: row.conciseAnalystNote,
+    recoveryOutcomeLabel: getMissedCallRecoveryOutcome(row),
+    recoveredValue: getMissedCallRecoveredValue(row),
+    resolutionReason: getMissedCallResolutionReason(row),
+    bookingCreated: row.bookingCreated ?? (getMissedCallRecoveryOutcome(row) === "Recovered"),
     updatedAtRaw: row.updatedAtRaw,
     notes: row.notes
   };
@@ -384,26 +466,10 @@ export function transitionMissedCallWorkflowRow(
   const lastActionAt = new Date().toISOString();
 
   if (nextStatus === "Resolved") {
-    return persistMissedCallWorkflowRow({
-      ...baseRow,
-      status: "Resolved",
-      workflowStatusLabel: "Resolved",
-      statusTone: "recovered",
-      urgency: "Closed",
-      urgencyTone: "recovered",
-      dueBy: "Completed",
-      nextStep: "Closed after successful recovery",
-      recommendedAction: "No further action required. Opportunity recovered and workflow closed.",
-      updatedAtRaw: lastActionAt,
-      notes: createNoteList(
-        baseRow,
-        createAuditEntry(
-          "resolved",
-          "Recovery case closed from the missed call recovery workflow.",
-          lastActionAt
-        )
-      )
-    });
+    return setMissedCallRecoveryOutcome(
+      baseRow,
+      getMissedCallRecoveryOutcome(baseRow) === "Recovered" ? "Recovered" : "Not Recovered"
+    );
   }
 
   if (nextStatus === "Escalated") {
@@ -444,12 +510,102 @@ export function transitionMissedCallWorkflowRow(
         : "Confirm availability and complete outbound follow-up",
     recommendedAction:
       "Immediate outbound follow-up required. Lead exhibited high purchase intent and should be contacted within the active recovery window. Document call outcome and booking disposition upon completion.",
+    actionStatus: "Needs Action",
+    callOutcome: "Follow-Up Needed",
+    missedOpportunityLabel: "Yes",
+    missedOpportunityDetected: true,
+    revenueImpact: baseRow.revenueImpact ?? baseRow.revenue,
+    revenueImpactValue: baseRow.revenueImpactValue ?? baseRow.revenueValue,
+    analystNote: "Recovery outreach has been triggered and customer response is still pending.",
+    conciseAnalystNote: "Follow-up sent; recovery outcome remains pending.",
+    recoveryOutcomeLabel: "Pending",
+    recoveredValue: 0,
+    resolutionReason: null,
+    bookingCreated: null,
     updatedAtRaw: lastActionAt,
     notes: createNoteList(
       baseRow,
       createAuditEntry(
         "follow_up_sent",
         "Follow-up sent from the missed call recovery workflow.",
+        lastActionAt
+      )
+    )
+  });
+}
+
+export function setMissedCallRecoveryOutcome(
+  row: DashboardCallRow,
+  outcome: Exclude<MissedCallRecoveryOutcome, "Pending">
+) {
+  const baseRow = mergeMissedCallWorkflowRow(row);
+  const lastActionAt = new Date().toISOString();
+
+  if (outcome === "Recovered") {
+    return persistMissedCallWorkflowRow({
+      ...baseRow,
+      status: "Resolved",
+      workflowStatusLabel: "Resolved",
+      actionStatus: "No Action Needed",
+      statusTone: "recovered",
+      urgency: "Closed",
+      urgencyTone: "recovered",
+      dueBy: "Completed",
+      callOutcome: "Converted",
+      missedOpportunityLabel: "No",
+      missedOpportunityDetected: false,
+      nextStep: "Recovered and archived",
+      recommendedAction:
+        "No further action required. Booking created and recovered revenue has been captured in the recovery workflow.",
+      revenueImpact: baseRow.revenueImpact ?? baseRow.revenue,
+      revenueImpactValue: baseRow.revenueImpactValue ?? baseRow.revenueValue,
+      analystNote: "Recovered revenue confirmed and booking created from the missed-call recovery workflow.",
+      conciseAnalystNote: "Recovered and converted into a booking.",
+      recoveryOutcomeLabel: "Recovered",
+      recoveredValue: baseRow.revenueValue,
+      resolutionReason: "Booking created after recovery follow-up.",
+      bookingCreated: true,
+      updatedAtRaw: lastActionAt,
+      notes: createNoteList(
+        baseRow,
+        createAuditEntry(
+          "resolved",
+          "Case closed as recovered. Booking created and revenue secured.",
+          lastActionAt
+        )
+      )
+    });
+  }
+
+  return persistMissedCallWorkflowRow({
+    ...baseRow,
+    status: "Resolved",
+    workflowStatusLabel: "Resolved",
+    actionStatus: "No Action Needed",
+    statusTone: "recovered",
+    urgency: "Closed",
+    urgencyTone: "recovered",
+    dueBy: "Completed",
+    callOutcome: "Missed Opportunity",
+    missedOpportunityLabel: "Yes",
+    missedOpportunityDetected: true,
+    nextStep: "Closed without recovery",
+    recommendedAction:
+      "No further action required. Recovery workflow has been closed without a recovered booking.",
+    revenueImpact: baseRow.revenueImpact ?? baseRow.revenue,
+    revenueImpactValue: baseRow.revenueImpactValue ?? baseRow.revenueValue,
+    analystNote: "Recovery attempt closed without booking conversion.",
+    conciseAnalystNote: "Closed without recovered booking.",
+    recoveryOutcomeLabel: "Not Recovered",
+    recoveredValue: 0,
+    resolutionReason: "Recovery window closed without booking.",
+    bookingCreated: false,
+    updatedAtRaw: lastActionAt,
+    notes: createNoteList(
+      baseRow,
+      createAuditEntry(
+        "resolved",
+        "Case closed without recovered booking.",
         lastActionAt
       )
     )

@@ -47,6 +47,10 @@ export type DashboardCallRow = CallTableRow & {
   recordingFilename: string | null;
   sourceSystem: string | null;
   workflowStatusLabel?: "Action Required" | "Follow-Up Sent" | "Escalated" | "Resolved";
+  recoveryOutcomeLabel?: "Pending" | "Recovered" | "Not Recovered";
+  recoveredValue?: number | null;
+  resolutionReason?: string | null;
+  bookingCreated?: boolean | null;
 };
 
 export type SupabaseAnalysisRecord = {
@@ -680,7 +684,11 @@ export function mapSupabaseCallToDashboardRow(
     direction: record.direction,
     recordingFilename: record.recording_filename,
     sourceSystem: record.source_system,
-    workflowStatusLabel: isMissedCallRecoveryCase ? "Action Required" : undefined
+    workflowStatusLabel: isMissedCallRecoveryCase ? "Action Required" : undefined,
+    recoveryOutcomeLabel: isMissedCallRecoveryCase ? "Pending" : undefined,
+    recoveredValue: isMissedCallRecoveryCase ? 0 : undefined,
+    resolutionReason: isMissedCallRecoveryCase ? null : undefined,
+    bookingCreated: isMissedCallRecoveryCase ? null : undefined
   };
 }
 

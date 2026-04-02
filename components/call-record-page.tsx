@@ -12,11 +12,16 @@ import {
   addMissedCallWorkflowNote,
   buildMissedCallHistory,
   formatMissedCallLastAction,
+  getMissedCallBookingCreatedLabel,
+  getMissedCallRecoveredValue,
+  getMissedCallRecoveryOutcome,
+  getMissedCallResolutionReason,
   getMissedCallWorkflowStatus,
   getOwnerLabelFromAuthUser,
   isMissedCallAssignedToOwner,
   isMissedCallRecoveryRecord,
   mergeMissedCallWorkflowRow,
+  setMissedCallRecoveryOutcome,
   transitionMissedCallWorkflowRow
 } from "@/lib/missed-call-workflow";
 
@@ -77,6 +82,14 @@ function formatTimelineTimestamp(value: string) {
     hour: "numeric",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+    maximumFractionDigits: 0
+  }).format(value);
 }
 
 function getSummaryToneClasses(tone: "neutral" | "success" | "warning" | "critical") {
@@ -207,6 +220,10 @@ export function CallRecordPage({
   const operationalOutcome = row.callOutcome ?? analysisSummary.callOutcome;
   const isMissedCallRecovery = isMissedCallRecoveryRecord(row);
   const historyEntries = isMissedCallRecovery ? buildMissedCallHistory(row) : [];
+  const recoveryOutcome = isMissedCallRecovery ? getMissedCallRecoveryOutcome(row) : null;
+  const recoveredValue = isMissedCallRecovery ? getMissedCallRecoveredValue(row) : 0;
+  const resolutionReason = isMissedCallRecovery ? getMissedCallResolutionReason(row) : null;
+  const bookingCreatedLabel = isMissedCallRecovery ? getMissedCallBookingCreatedLabel(row) : null;
   const backHref = isMissedCallRecovery ? "/missed-calls" : "/dashboard";
   const backLabel = isMissedCallRecovery ? "Back to Missed Calls" : "Back to Dashboard";
   const primaryStatusValue = isMissedCallRecovery
@@ -254,16 +271,16 @@ export function CallRecordPage({
   }
 
   function handleResolve() {
-    if (row.status === "Resolved") {
+    if (!isMissedCallRecovery && row.status === "Resolved") {
       setNoticeTone("error");
       setNotice("This interaction record is already marked as resolved.");
       return;
     }
 
     if (isMissedCallRecovery) {
-      setRow(transitionMissedCallWorkflowRow(row, "Resolved"));
+      setRow(setMissedCallRecoveryOutcome(row, "Not Recovered"));
       setNoticeTone("success");
-      setNotice("Interaction marked as resolved.");
+      setNotice("Case closed as not recovered.");
       return;
     }
 
@@ -285,6 +302,16 @@ export function CallRecordPage({
     }));
     setNoticeTone("success");
     setNotice("Interaction marked as resolved.");
+  }
+
+  function handleMarkRecovered() {
+    if (!isMissedCallRecovery) {
+      return;
+    }
+
+    setRow(setMissedCallRecoveryOutcome(row, "Recovered"));
+    setNoticeTone("success");
+    setNotice("Case closed as recovered.");
   }
 
   async function handleSendFollowUp() {
@@ -575,16 +602,47 @@ export function CallRecordPage({
                     value={primaryStatusValue}
                     detail={isMissedCallRecovery ? operationalOutcome : row.status}
                   />
+                  {isMissedCallRecovery ? (
+                    <SummaryField
+                      label="Recovery Outcome"
+                      value={recoveryOutcome ?? "Pending"}
+                      detail={resolutionReason ?? "Recovery outcome still pending."}
+                    />
+                  ) : null}
                   <SummaryField
                     label={isMissedCallRecovery ? "Revenue Risk" : "Estimated Revenue"}
                     value={row.revenue}
                     detail={isMissedCallRecovery ? "Estimated revenue at risk" : "Projected recovery value"}
                   />
+                  {isMissedCallRecovery ? (
+                    <SummaryField
+                      label="Recovered Value"
+                      value={recoveryOutcome === "Pending" ? "Pending" : formatCurrency(recoveredValue)}
+                      detail={
+                        recoveryOutcome === "Recovered"
+                          ? "Recovered revenue secured from this case"
+                          : "No recovered revenue recorded"
+                      }
+                    />
+                  ) : null}
                   <SummaryField
                     label="Issue Identified"
                     value={issueIdentified}
                     detail={row.reason}
                   />
+                  {isMissedCallRecovery ? (
+                    <SummaryField
+                      label="Booking Created"
+                      value={bookingCreatedLabel ?? "Pending"}
+                      detail={
+                        bookingCreatedLabel === "Yes"
+                          ? "Booking confirmed in the recovery workflow"
+                          : bookingCreatedLabel === "No"
+                            ? "No booking recorded for this case"
+                            : "Booking outcome not yet recorded"
+                      }
+                    />
+                  ) : null}
                   {isMissedCallRecovery ? (
                     <SummaryField label="Phone Number" value={row.phone} detail={row.sourceSystem ?? "Inbound call"} />
                   ) : null}
@@ -613,14 +671,33 @@ export function CallRecordPage({
                 <p className="type-body-text mt-3 text-[14px] leading-7">{row.recommendedAction}</p>
 
                 <div className="mt-5 flex flex-col gap-2.5">
-                  <button
-                    type="button"
-                    onClick={handleResolve}
-                    disabled={row.status === "Resolved"}
-                    className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
-                  >
-                    Mark as Resolved
-                  </button>
+                  {isMissedCallRecovery ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleMarkRecovered}
+                        className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                      >
+                        Mark Recovered
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleResolve}
+                        className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
+                      >
+                        Mark Not Recovered
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleResolve}
+                      disabled={row.status === "Resolved"}
+                      className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
+                    >
+                      Mark as Resolved
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleSendFollowUp}
@@ -886,13 +963,21 @@ export function CallRecordPage({
                 >
                 {isSendingFollowUp ? "Sending Follow-Up..." : "Send Follow-Up"}
               </button>
+              {isMissedCallRecovery ? (
+                <button
+                  type="button"
+                  onClick={handleMarkRecovered}
+                  className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                >
+                  Mark Recovered
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleResolve}
-                disabled={row.status === "Resolved"}
                 className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
               >
-                Mark as Resolved
+                {isMissedCallRecovery ? "Mark Not Recovered" : "Mark as Resolved"}
               </button>
               <button
                 type="button"
