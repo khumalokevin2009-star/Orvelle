@@ -7,6 +7,8 @@ import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
 import type { CallRecordDetail, TranscriptEntry } from "@/lib/call-detail";
 import {
+  addMissedCallWorkflowNote,
+  buildMissedCallHistory,
   formatMissedCallLastAction,
   getMissedCallWorkflowStatus,
   isMissedCallRecoveryRecord,
@@ -62,6 +64,15 @@ function MetaField({ label, value }: { label: string; value: string }) {
       <div className="type-section-title mt-2 text-[15px]">{value}</div>
     </div>
   );
+}
+
+function formatTimelineTimestamp(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
 }
 
 function getSummaryToneClasses(tone: "neutral" | "success" | "warning" | "critical") {
@@ -190,6 +201,7 @@ export function CallRecordPage({
   const analysisSummary = detailState.analysisSummary ?? defaultAnalysisSummary;
   const operationalOutcome = row.callOutcome ?? analysisSummary.callOutcome;
   const isMissedCallRecovery = isMissedCallRecoveryRecord(row);
+  const historyEntries = isMissedCallRecovery ? buildMissedCallHistory(row) : [];
   const backHref = isMissedCallRecovery ? "/missed-calls" : "/dashboard";
   const backLabel = isMissedCallRecovery ? "Back to Missed Calls" : "Back to Dashboard";
   const primaryStatusValue = isMissedCallRecovery
@@ -340,7 +352,11 @@ export function CallRecordPage({
       return;
     }
 
-    pushNote(note.trim());
+    if (isMissedCallRecovery) {
+      setRow(addMissedCallWorkflowNote(row, note.trim()));
+    } else {
+      pushNote(note.trim());
+    }
     setNoticeTone("success");
     setNotice("Operational note recorded.");
   }
@@ -744,16 +760,35 @@ export function CallRecordPage({
                 : "Audit trail and operational annotations associated with the interaction."
             }
           >
-            <div className="space-y-3">
-              {row.notes.map((note, index) => (
-                <div
-                  key={`${row.id}-note-${index}`}
-                  className="type-body-text surface-secondary px-4 py-3 text-[14px]"
-                >
-                  {note}
-                </div>
-              ))}
-            </div>
+            {isMissedCallRecovery ? (
+              <div className="space-y-3">
+                {historyEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="surface-secondary px-4 py-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="type-section-title text-[15px]">{entry.title}</div>
+                      <div className="type-muted-text text-[12px]">
+                        {formatTimelineTimestamp(entry.timestamp)}
+                      </div>
+                    </div>
+                    <p className="type-body-text mt-2 text-[14px]">{entry.detail}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {row.notes.map((note, index) => (
+                  <div
+                    key={`${row.id}-note-${index}`}
+                    className="type-body-text surface-secondary px-4 py-3 text-[14px]"
+                  >
+                    {note}
+                  </div>
+                ))}
+              </div>
+            )}
           </CardSection>
         </div>
 

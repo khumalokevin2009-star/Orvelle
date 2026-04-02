@@ -1,6 +1,20 @@
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
 
 export type MissedCallWorkflowStatus = NonNullable<DashboardCallRow["workflowStatusLabel"]>;
+export type MissedCallHistoryEventType =
+  | "missed_call_detected"
+  | "follow_up_sent"
+  | "escalated"
+  | "resolved"
+  | "note_added";
+
+export type MissedCallHistoryEntry = {
+  id: string;
+  type: MissedCallHistoryEventType;
+  title: string;
+  detail: string;
+  timestamp: string;
+};
 
 type MissedCallWorkflowOverride = Pick<
   DashboardCallRow,
@@ -18,6 +32,7 @@ type MissedCallWorkflowOverride = Pick<
 >;
 
 const STORAGE_KEY = "orvelle.missed-call-workflow";
+const AUDIT_PREFIX = "__AUDIT__";
 
 function formatDisplayTimestamp(value: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -60,12 +75,142 @@ function createNoteList(row: DashboardCallRow, note: string) {
   return row.notes.includes(note) ? row.notes : [note, ...row.notes];
 }
 
+function formatAuditTitle(type: MissedCallHistoryEventType) {
+  switch (type) {
+    case "missed_call_detected":
+      return "Missed call detected";
+    case "follow_up_sent":
+      return "Follow-up sent";
+    case "escalated":
+      return "Case escalated";
+    case "resolved":
+      return "Marked resolved";
+    case "note_added":
+      return "Note added";
+    default:
+      return "Workflow event";
+  }
+}
+
+function createAuditEntry(
+  type: MissedCallHistoryEventType,
+  detail: string,
+  timestamp = new Date().toISOString()
+) {
+  return `${AUDIT_PREFIX}|${type}|${timestamp}|${detail}`;
+}
+
+function parseAuditEntry(note: string): MissedCallHistoryEntry | null {
+  if (!note.startsWith(`${AUDIT_PREFIX}|`)) {
+    return null;
+  }
+
+  const [, type, timestamp, ...detailParts] = note.split("|");
+  const detail = detailParts.join("|").trim();
+
+  if (!type || !timestamp || !detail) {
+    return null;
+  }
+
+  return {
+    id: `${type}-${timestamp}-${detail}`,
+    type: type as MissedCallHistoryEventType,
+    title: formatAuditTitle(type as MissedCallHistoryEventType),
+    detail,
+    timestamp
+  };
+}
+
+function buildSyntheticHistoryEntry(
+  type: MissedCallHistoryEventType,
+  detail: string,
+  timestamp: string
+): MissedCallHistoryEntry {
+  return {
+    id: `${type}-${timestamp}-${detail}`,
+    type,
+    title: formatAuditTitle(type),
+    detail,
+    timestamp
+  };
+}
+
+function hasHistoryType(entries: MissedCallHistoryEntry[], type: MissedCallHistoryEventType) {
+  return entries.some((entry) => entry.type === type);
+}
+
 export function isMissedCallRecoveryRecord(rowOrId: DashboardCallRow | string) {
   if (typeof rowOrId === "string") {
     return rowOrId.startsWith("missed-call-");
   }
 
   return rowOrId.id.startsWith("missed-call-") || Boolean(rowOrId.workflowStatusLabel && rowOrId.direction === "inbound");
+}
+
+export function buildMissedCallHistory(row: DashboardCallRow): MissedCallHistoryEntry[] {
+  const parsedEntries = row.notes
+    .map((note) => parseAuditEntry(note))
+    .filter((entry): entry is MissedCallHistoryEntry => Boolean(entry));
+
+  if (!hasHistoryType(parsedEntries, "missed_call_detected")) {
+    parsedEntries.push(
+      buildSyntheticHistoryEntry(
+        "missed_call_detected",
+        `Inbound call entered the recovery workflow from ${row.sourceSystem ?? "the connected call system"}.`,
+        row.startedAtRaw
+      )
+    );
+  }
+
+  const workflowStatus = getMissedCallWorkflowStatus(row);
+
+  if (workflowStatus === "Follow-Up Sent" && !hasHistoryType(parsedEntries, "follow_up_sent")) {
+    parsedEntries.push(
+      buildSyntheticHistoryEntry(
+        "follow_up_sent",
+        "Follow-up action was sent and the case remains open pending customer response.",
+        row.updatedAtRaw ?? row.startedAtRaw
+      )
+    );
+  }
+
+  if (workflowStatus === "Escalated" && !hasHistoryType(parsedEntries, "escalated")) {
+    parsedEntries.push(
+      buildSyntheticHistoryEntry(
+        "escalated",
+        "Case was escalated for immediate recovery handling.",
+        row.updatedAtRaw ?? row.startedAtRaw
+      )
+    );
+  }
+
+  if (workflowStatus === "Resolved" && !hasHistoryType(parsedEntries, "resolved")) {
+    parsedEntries.push(
+      buildSyntheticHistoryEntry(
+        "resolved",
+        "Recovery workflow was completed and the case was marked resolved.",
+        row.updatedAtRaw ?? row.startedAtRaw
+      )
+    );
+  }
+
+  row.notes.forEach((note, index) => {
+    if (note.startsWith(`${AUDIT_PREFIX}|`)) {
+      return;
+    }
+
+    parsedEntries.push({
+      id: `legacy-note-${row.id}-${index}`,
+      type: "note_added",
+      title: formatAuditTitle("note_added"),
+      detail: note,
+      timestamp: row.updatedAtRaw ?? row.startedAtRaw
+    });
+  });
+
+  return parsedEntries.sort(
+    (left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()
+  );
 }
 
 export function getMissedCallWorkflowStatus(row: DashboardCallRow): MissedCallWorkflowStatus {
@@ -126,6 +271,19 @@ export function mergeMissedCallWorkflowRows(rows: DashboardCallRow[]) {
   return rows.map((row) => mergeMissedCallWorkflowRow(row));
 }
 
+export function addMissedCallWorkflowNote(row: DashboardCallRow, note: string) {
+  const baseRow = mergeMissedCallWorkflowRow(row);
+
+  return persistMissedCallWorkflowRow({
+    ...baseRow,
+    updatedAtRaw: new Date().toISOString(),
+    notes: createNoteList(
+      baseRow,
+      createAuditEntry("note_added", note.trim())
+    )
+  });
+}
+
 function persistMissedCallWorkflowRow(row: DashboardCallRow) {
   if (!isMissedCallRecoveryRecord(row)) {
     return row;
@@ -169,7 +327,14 @@ export function transitionMissedCallWorkflowRow(
       nextStep: "Closed after successful recovery",
       recommendedAction: "No further action required. Opportunity recovered and workflow closed.",
       updatedAtRaw: lastActionAt,
-      notes: createNoteList(baseRow, "Recovery case closed from the missed call recovery workflow.")
+      notes: createNoteList(
+        baseRow,
+        createAuditEntry(
+          "resolved",
+          "Recovery case closed from the missed call recovery workflow.",
+          lastActionAt
+        )
+      )
     });
   }
 
@@ -186,7 +351,14 @@ export function transitionMissedCallWorkflowRow(
       recommendedAction:
         "Escalate the case to senior operations ownership immediately, then complete an outbound recovery call while purchase intent remains active.",
       updatedAtRaw: lastActionAt,
-      notes: createNoteList(baseRow, "Case escalated from the missed call recovery workflow.")
+      notes: createNoteList(
+        baseRow,
+        createAuditEntry(
+          "escalated",
+          "Case escalated from the missed call recovery workflow.",
+          lastActionAt
+        )
+      )
     });
   }
 
@@ -205,6 +377,13 @@ export function transitionMissedCallWorkflowRow(
     recommendedAction:
       "Immediate outbound follow-up required. Lead exhibited high purchase intent and should be contacted within the active recovery window. Document call outcome and booking disposition upon completion.",
     updatedAtRaw: lastActionAt,
-    notes: createNoteList(baseRow, "Follow-up sent from the missed call recovery workflow.")
+    notes: createNoteList(
+      baseRow,
+      createAuditEntry(
+        "follow_up_sent",
+        "Follow-up sent from the missed call recovery workflow.",
+        lastActionAt
+      )
+    )
   });
 }
