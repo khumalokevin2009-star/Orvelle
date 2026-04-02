@@ -138,6 +138,19 @@ function buildTwilioSignaturePayload(url: string, params: Map<string, string[]>)
   return signaturePayload;
 }
 
+export function createTwilioWebhookSignature({
+  authToken,
+  url,
+  params
+}: {
+  authToken: string;
+  url: string;
+  params: Map<string, string[]>;
+}) {
+  const payload = buildTwilioSignaturePayload(url, params);
+  return createHmac("sha1", authToken).update(payload, "utf8").digest("base64");
+}
+
 export function validateTwilioWebhookSignature({
   authToken,
   signature,
@@ -157,8 +170,11 @@ export function validateTwilioWebhookSignature({
     return { ok: false, reason: "missing_signature" };
   }
 
-  const payload = buildTwilioSignaturePayload(url, params);
-  const expectedSignature = createHmac("sha1", authToken).update(payload, "utf8").digest("base64");
+  const expectedSignature = createTwilioWebhookSignature({
+    authToken,
+    url,
+    params
+  });
 
   const expectedBuffer = Buffer.from(expectedSignature);
   const receivedBuffer = Buffer.from(signature);

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { SettingToggle } from "@/components/setting-toggle";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
@@ -106,6 +107,14 @@ export default function SettingsPage() {
       <WorkspacePageHeader
         title="Platform Settings"
         description="Manage business profile details, notification behavior, analysis defaults, and user access across the platform."
+        actions={
+          <Link
+            href="/settings/integrations"
+            className="button-secondary-ui inline-flex h-11 items-center justify-center px-4 text-[14px] no-underline transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+          >
+            Integration Settings
+          </Link>
+        }
       />
 
       <div className="mt-5 grid gap-4 lg:mt-6 lg:gap-5 xl:grid-cols-[minmax(0,1.15fr)_360px] xl:items-start">

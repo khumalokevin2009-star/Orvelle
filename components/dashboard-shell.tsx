@@ -38,7 +38,8 @@ const navItems = [
     label: "Configuration",
     mobileLabel: "Settings",
     icon: SettingsIcon,
-    matches: (pathname: string) => pathname === "/settings"
+    matches: (pathname: string) =>
+      pathname === "/settings" || pathname.startsWith("/settings/")
   }
 ] as const;
 
