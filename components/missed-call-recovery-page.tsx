@@ -5,9 +5,16 @@ import { useRouter } from "next/navigation";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { demoMissedCallRecoveryRows } from "@/lib/demo-dashboard-data";
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
+import {
+  formatMissedCallLastAction,
+  getMissedCallDuration,
+  getMissedCallWorkflowStatus,
+  mergeMissedCallWorkflowRows,
+  transitionMissedCallWorkflowRow,
+  type MissedCallWorkflowStatus
+} from "@/lib/missed-call-workflow";
 
 type QueueFilter = "All" | "Action Required" | "Follow-Up Sent" | "Resolved";
-type QueueStatusLabel = "Action Required" | "Follow-Up Sent" | "Escalated" | "Resolved";
 
 const filterOptions: QueueFilter[] = ["All", "Action Required", "Follow-Up Sent", "Resolved"];
 
@@ -19,23 +26,7 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function getFollowUpStatus(row: DashboardCallRow): QueueStatusLabel {
-  if (row.workflowStatusLabel) {
-    return row.workflowStatusLabel;
-  }
-
-  if (row.status === "Resolved") {
-    return "Resolved";
-  }
-
-  if (row.status === "Escalated") {
-    return "Escalated";
-  }
-
-  return "Action Required";
-}
-
-function getStatusClasses(status: QueueStatusLabel) {
+function getStatusClasses(status: MissedCallWorkflowStatus) {
   switch (status) {
     case "Action Required":
       return "border border-[#F2D8D8] bg-[#FFF6F6] text-[#A04C4C]";
@@ -50,20 +41,8 @@ function getStatusClasses(status: QueueStatusLabel) {
   }
 }
 
-function getCallDuration(row: DashboardCallRow) {
-  if (row.callOutcome === "No Callback") {
-    return "4m 22s";
-  }
-
-  if (row.callOutcome === "Converted") {
-    return "5m 11s";
-  }
-
-  return "3m 48s";
-}
-
 function matchesFilter(row: DashboardCallRow, filter: QueueFilter) {
-  const status = getFollowUpStatus(row);
+  const status = getMissedCallWorkflowStatus(row);
 
   if (filter === "All") {
     return true;
@@ -111,7 +90,7 @@ function DetailField({
 
 export function MissedCallRecoveryPage() {
   const router = useRouter();
-  const [rows, setRows] = useState(demoMissedCallRecoveryRows);
+  const [rows, setRows] = useState(() => mergeMissedCallWorkflowRows(demoMissedCallRecoveryRows));
   const [selectedCallId, setSelectedCallId] = useState(demoMissedCallRecoveryRows[0]?.id ?? null);
   const [activityMessage, setActivityMessage] = useState<string | null>(null);
   const [activityTone, setActivityTone] = useState<"success" | "error">("success");
@@ -128,13 +107,13 @@ export function MissedCallRecoveryPage() {
   const summary = useMemo(() => {
     const missedCallsToday = rows.length;
     const awaitingFollowUp = rows.filter((row) => {
-      const status = getFollowUpStatus(row);
+      const status = getMissedCallWorkflowStatus(row);
       return status === "Action Required" || status === "Escalated";
     }).length;
     const revenueAtRisk = rows
-      .filter((row) => getFollowUpStatus(row) !== "Resolved")
+      .filter((row) => getMissedCallWorkflowStatus(row) !== "Resolved")
       .reduce((sum, row) => sum + row.revenueValue, 0);
-    const resolvedCount = rows.filter((row) => getFollowUpStatus(row) === "Resolved").length;
+    const resolvedCount = rows.filter((row) => getMissedCallWorkflowStatus(row) === "Resolved").length;
     const recoveryRate = rows.length > 0 ? Math.round((resolvedCount / rows.length) * 100) : 0;
 
     return {
@@ -145,56 +124,19 @@ export function MissedCallRecoveryPage() {
     };
   }, [rows]);
 
-  function applyRowStatus(id: string, nextStatus: QueueStatusLabel) {
+  function applyRowStatus(id: string, nextStatus: MissedCallWorkflowStatus) {
     setRows((current) =>
       current.map((row) => {
         if (row.id !== id) {
           return row;
         }
 
-        if (nextStatus === "Resolved") {
-          return {
-            ...row,
-            status: "Resolved",
-            workflowStatusLabel: "Resolved",
-            statusTone: "recovered",
-            urgency: "Closed",
-            urgencyTone: "recovered",
-            dueBy: "Completed",
-            nextStep: "Closed after successful recovery",
-            recommendedAction: "No further action required. Opportunity recovered and workflow closed.",
-            notes: row.notes.includes("Recovery case closed from the missed call recovery queue.")
-              ? row.notes
-              : ["Recovery case closed from the missed call recovery queue.", ...row.notes]
-          };
-        }
-
-        return {
-          ...row,
-          status: nextStatus === "Escalated" ? "Escalated" : "Under Review",
-          workflowStatusLabel: nextStatus,
-          statusTone: nextStatus === "Escalated" ? "critical" : "pending",
-          urgency: nextStatus === "Escalated" ? "Critical Priority" : "Elevated Priority",
-          urgencyTone: nextStatus === "Escalated" ? "critical" : "pending",
-          dueBy: nextStatus === "Escalated" ? "Immediate escalation" : "Follow-up queued",
-          nextStep:
-            nextStatus === "Escalated"
-              ? "Escalate to manager and call back"
-              : "Confirm availability and complete outbound follow-up",
-          notes:
-            nextStatus === "Escalated"
-              ? row.notes.includes("Case escalated from the missed call recovery queue.")
-                ? row.notes
-                : ["Case escalated from the missed call recovery queue.", ...row.notes]
-              : row.notes.includes("Follow-up sent from the missed call recovery queue.")
-                ? row.notes
-                : ["Follow-up sent from the missed call recovery queue.", ...row.notes]
-        };
+        return transitionMissedCallWorkflowRow(row, nextStatus);
       })
     );
   }
 
-  function updateRowStatus(id: string, nextStatus: QueueStatusLabel, message: string) {
+  function updateRowStatus(id: string, nextStatus: MissedCallWorkflowStatus, message: string) {
     applyRowStatus(id, nextStatus);
     setSelectedCallId(id);
     setActivityMessage(message);
@@ -217,7 +159,7 @@ export function MissedCallRecoveryPage() {
       const payload = (await response.json().catch(() => null)) as
         | {
             message?: string;
-            statusLabel?: QueueStatusLabel;
+            statusLabel?: MissedCallWorkflowStatus;
           }
         | null;
 
@@ -300,11 +242,22 @@ export function MissedCallRecoveryPage() {
             <p className="type-body-text mt-2 max-w-[760px] text-[14px] leading-6">
               {queueFocusCall.summary}
             </p>
+            <div className="mt-4 flex flex-wrap items-center gap-2.5 text-[13px]">
+              <span
+                className={`inline-flex rounded-full px-3 py-1.5 font-semibold tracking-[0.02em] ${getStatusClasses(
+                  getMissedCallWorkflowStatus(queueFocusCall)
+                )}`}
+              >
+                {getMissedCallWorkflowStatus(queueFocusCall)}
+              </span>
+              <span className="type-body-text">Assigned owner: {queueFocusCall.assignedOwner}</span>
+              <span className="type-body-text">Last action: {formatMissedCallLastAction(queueFocusCall)}</span>
+            </div>
           </div>
 
           <div className="grid gap-3.5 px-5 py-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
             <DetailField label="Timestamp" value={queueFocusCall.date} />
-            <DetailField label="Call Duration" value={getCallDuration(queueFocusCall)} />
+            <DetailField label="Call Duration" value={getMissedCallDuration(queueFocusCall)} />
             <DetailField label="Revenue Risk" value={formatCurrency(queueFocusCall.revenueValue)} />
             <DetailField label="Recommended Action" value={queueFocusCall.recommendedAction} />
           </div>
@@ -360,7 +313,7 @@ export function MissedCallRecoveryPage() {
             <tbody>
               {filteredRows.length > 0 ? (
                 filteredRows.map((row) => {
-                  const status = getFollowUpStatus(row);
+                  const status = getMissedCallWorkflowStatus(row);
                   const isSelected = row.id === selectedCallId;
 
                   return (
@@ -377,12 +330,15 @@ export function MissedCallRecoveryPage() {
                           {row.caller}
                         </div>
                         <div className="type-body-text mt-1 text-[13px] leading-6">{row.reason}</div>
+                        <div className="type-muted-text mt-2 text-[12px]">
+                          {row.assignedOwner} • Last action {formatMissedCallLastAction(row)}
+                        </div>
                       </td>
                       <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
                         <div className="type-section-title text-[14px]">{row.date}</div>
                       </td>
                       <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
-                        <div className="type-section-title text-[14px]">{getCallDuration(row)}</div>
+                        <div className="type-section-title text-[14px]">{getMissedCallDuration(row)}</div>
                       </td>
                       <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
                         <div className="inline-flex rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition group-hover:shadow-[0_6px_16px_rgba(17,24,39,0.08)]">

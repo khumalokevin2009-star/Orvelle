@@ -2,10 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
 import type { CallRecordDetail, TranscriptEntry } from "@/lib/call-detail";
+import {
+  formatMissedCallLastAction,
+  getMissedCallWorkflowStatus,
+  isMissedCallRecoveryRecord,
+  mergeMissedCallWorkflowRow,
+  transitionMissedCallWorkflowRow
+} from "@/lib/missed-call-workflow";
 
 const defaultAnalysisSummary: CallRecordDetail["analysisSummary"] = {
   intentLevel: "Analysis not yet generated",
@@ -171,7 +178,7 @@ export function CallRecordPage({
   detail: CallRecordDetail;
 }) {
   const router = useRouter();
-  const [row, setRow] = useState(initialRow);
+  const [row, setRow] = useState(() => mergeMissedCallWorkflowRow(initialRow));
   const [detailState, setDetailState] = useState(() => normalizeDetailState(detail));
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"success" | "error">("success");
@@ -182,16 +189,20 @@ export function CallRecordPage({
   const [isSendingFollowUp, setIsSendingFollowUp] = useState(false);
   const analysisSummary = detailState.analysisSummary ?? defaultAnalysisSummary;
   const operationalOutcome = row.callOutcome ?? analysisSummary.callOutcome;
-  const isMissedCallRecoveryRecord = row.id.startsWith("missed-call-");
-  const backHref = isMissedCallRecoveryRecord ? "/missed-calls" : "/dashboard";
-  const backLabel = isMissedCallRecoveryRecord ? "Back to Missed Calls" : "Back to Dashboard";
-  const primaryStatusValue = isMissedCallRecoveryRecord
-    ? row.workflowStatusLabel ?? row.status
+  const isMissedCallRecovery = isMissedCallRecoveryRecord(row);
+  const backHref = isMissedCallRecovery ? "/missed-calls" : "/dashboard";
+  const backLabel = isMissedCallRecovery ? "Back to Missed Calls" : "Back to Dashboard";
+  const primaryStatusValue = isMissedCallRecovery
+    ? getMissedCallWorkflowStatus(row)
     : operationalOutcome;
   const issueIdentified =
     analysisSummary.primaryIssue !== "Pending classification"
       ? analysisSummary.primaryIssue
       : row.primaryIssue ?? row.reason;
+
+  useEffect(() => {
+    setRow(mergeMissedCallWorkflowRow(initialRow));
+  }, [initialRow]);
 
   function pushNote(note: string) {
     setRow((currentRow) => ({
@@ -204,6 +215,13 @@ export function CallRecordPage({
     if (row.status === "Resolved") {
       setNoticeTone("error");
       setNotice("This interaction record is already marked as resolved.");
+      return;
+    }
+
+    if (isMissedCallRecovery) {
+      setRow(transitionMissedCallWorkflowRow(row, "Resolved"));
+      setNoticeTone("success");
+      setNotice("Interaction marked as resolved.");
       return;
     }
 
@@ -256,18 +274,22 @@ export function CallRecordPage({
         throw new Error(payload?.message || "Unable to send the follow-up right now.");
       }
 
-      setRow((currentRow) => ({
-        ...currentRow,
-        status: currentRow.status === "Escalated" ? "Escalated" : "Under Review",
-        workflowStatusLabel: "Follow-Up Sent",
-        statusTone: currentRow.status === "Escalated" ? "critical" : "pending",
-        dueBy: "Within 2 Hours",
-        recommendedAction:
-          "Immediate outbound follow-up required. Lead exhibited high purchase intent and should be contacted within the active recovery window. Document call outcome and booking disposition upon completion.",
-        notes: currentRow.notes.includes("Follow-up sent from the call detail page.")
-          ? currentRow.notes
-          : ["Follow-up sent from the call detail page.", ...currentRow.notes]
-      }));
+      if (isMissedCallRecovery) {
+        setRow(transitionMissedCallWorkflowRow(row, "Follow-Up Sent"));
+      } else {
+        setRow((currentRow) => ({
+          ...currentRow,
+          status: currentRow.status === "Escalated" ? "Escalated" : "Under Review",
+          workflowStatusLabel: "Follow-Up Sent",
+          statusTone: currentRow.status === "Escalated" ? "critical" : "pending",
+          dueBy: "Within 2 Hours",
+          recommendedAction:
+            "Immediate outbound follow-up required. Lead exhibited high purchase intent and should be contacted within the active recovery window. Document call outcome and booking disposition upon completion.",
+          notes: currentRow.notes.includes("Follow-up sent from the call detail page.")
+            ? currentRow.notes
+            : ["Follow-up sent from the call detail page.", ...currentRow.notes]
+        }));
+      }
       setNoticeTone("success");
       setNotice(payload?.message || "Follow-up sent and recovery workflow updated.");
     } catch (error) {
@@ -282,6 +304,13 @@ export function CallRecordPage({
     if (row.status === "Resolved") {
       setNoticeTone("error");
       setNotice("Resolved interaction records cannot be escalated.");
+      return;
+    }
+
+    if (isMissedCallRecovery) {
+      setRow(transitionMissedCallWorkflowRow(row, "Escalated"));
+      setNoticeTone("success");
+      setNotice("Case escalated for immediate recovery handling.");
       return;
     }
 
@@ -435,9 +464,9 @@ export function CallRecordPage({
       ) : null}
 
       <WorkspacePageHeader
-        title={isMissedCallRecoveryRecord ? "Missed Call Recovery Record" : "Call Analysis Record"}
+        title={isMissedCallRecovery ? "Missed Call Recovery Record" : "Call Analysis Record"}
         description={
-          isMissedCallRecoveryRecord
+          isMissedCallRecovery
             ? "Detailed review of a missed inbound call, the revenue risk attached to it, and the next operational recovery step."
             : "Detailed inspection of a flagged interaction, associated conversion failure indicators, and required revenue recovery actions."
         }
@@ -463,7 +492,7 @@ export function CallRecordPage({
                   row.statusTone
                 )}`}
               >
-                {isMissedCallRecoveryRecord ? primaryStatusValue : row.status}
+                {isMissedCallRecovery ? primaryStatusValue : row.status}
               </span>
             </div>
 
@@ -474,34 +503,40 @@ export function CallRecordPage({
 
                 <div
                   className={`mt-5 grid gap-3 sm:grid-cols-2 ${
-                    isMissedCallRecoveryRecord ? "xl:grid-cols-3" : "xl:grid-cols-4"
+                    isMissedCallRecovery ? "xl:grid-cols-4" : "xl:grid-cols-4"
                   }`}
                 >
                   <SummaryField
-                    label={isMissedCallRecoveryRecord ? "Follow-Up Status" : "Outcome"}
+                    label={isMissedCallRecovery ? "Follow-Up Status" : "Outcome"}
                     value={primaryStatusValue}
-                    detail={isMissedCallRecoveryRecord ? operationalOutcome : row.status}
+                    detail={isMissedCallRecovery ? operationalOutcome : row.status}
                   />
                   <SummaryField
-                    label={isMissedCallRecoveryRecord ? "Revenue Risk" : "Estimated Revenue"}
+                    label={isMissedCallRecovery ? "Revenue Risk" : "Estimated Revenue"}
                     value={row.revenue}
-                    detail={isMissedCallRecoveryRecord ? "Estimated revenue at risk" : "Projected recovery value"}
+                    detail={isMissedCallRecovery ? "Estimated revenue at risk" : "Projected recovery value"}
                   />
                   <SummaryField
                     label="Issue Identified"
                     value={issueIdentified}
                     detail={row.reason}
                   />
-                  {isMissedCallRecoveryRecord ? (
+                  {isMissedCallRecovery ? (
                     <SummaryField label="Phone Number" value={row.phone} detail={row.sourceSystem ?? "Inbound call"} />
                   ) : null}
                   <SummaryField
                     label="Timestamp"
                     value={row.date}
-                    detail={isMissedCallRecoveryRecord ? "Inbound call received" : `${row.phone} • ${detailState.duration}`}
+                    detail={isMissedCallRecovery ? "Inbound call received" : `${row.phone} • ${detailState.duration}`}
                   />
-                  {isMissedCallRecoveryRecord ? (
+                  {isMissedCallRecovery ? (
                     <SummaryField label="Call Duration" value={detailState.duration} detail="Recorded interaction length" />
+                  ) : null}
+                  {isMissedCallRecovery ? (
+                    <SummaryField label="Assigned Owner" value={row.assignedOwner} detail="Current recovery owner" />
+                  ) : null}
+                  {isMissedCallRecovery ? (
+                    <SummaryField label="Last Action" value={formatMissedCallLastAction(row)} detail="Latest workflow update" />
                   ) : null}
                 </div>
               </div>
@@ -702,9 +737,9 @@ export function CallRecordPage({
           </CardSection>
 
           <CardSection
-            title={isMissedCallRecoveryRecord ? "Notes & Timeline" : "Analyst Notes"}
+            title={isMissedCallRecovery ? "Notes & Timeline" : "Analyst Notes"}
             description={
-              isMissedCallRecoveryRecord
+              isMissedCallRecovery
                 ? "Operational notes, follow-up history, and recovery timeline for this missed call."
                 : "Audit trail and operational annotations associated with the interaction."
             }
