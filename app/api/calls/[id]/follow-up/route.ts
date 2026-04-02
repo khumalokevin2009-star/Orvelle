@@ -31,7 +31,9 @@ export async function POST(
     const result = await sendFollowUpForCall({
       row: demoRow,
       forceMock: true,
-      settings: missedCallRecoverySettings ?? undefined
+      settings: missedCallRecoverySettings ?? undefined,
+      userId: user.id,
+      source: "manual"
     });
 
     console.info("[follow-up] Demo follow-up request completed.", {
@@ -94,7 +96,9 @@ export async function POST(
   );
   const result = await sendFollowUpForCall({
     row,
-    settings: missedCallRecoverySettings ?? undefined
+    settings: missedCallRecoverySettings ?? undefined,
+    userId: user.id,
+    source: "manual"
   });
 
   if (!result.ok) {
@@ -121,6 +125,19 @@ export async function POST(
     mode: result.mode,
     sid: result.sid
   });
+
+  const { error: updateError } = await supabase
+    .from("calls")
+    .update({ status: "under_review" })
+    .eq("id", row.id)
+    .neq("status", "resolved");
+
+  if (updateError) {
+    console.warn("[follow-up] Follow-up SMS sent but call status could not be updated.", {
+      callId: row.id,
+      message: updateError.message
+    });
+  }
 
   return NextResponse.json({
     message: result.message,

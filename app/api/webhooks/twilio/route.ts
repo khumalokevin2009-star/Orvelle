@@ -1,10 +1,16 @@
 export const runtime = "nodejs";
 
+import {
+  callsSelectFields,
+  mapSupabaseCallToDashboardRow,
+  type SupabaseCallRecord
+} from "@/lib/dashboard-calls";
 import { ingestCall } from "@/lib/call-ingestion";
 import { appendIntegrationError } from "@/lib/integrations/error-log";
 import { updateProviderConnectionState } from "@/lib/integrations/connection-status";
 import { recordMonitoringEvent } from "@/lib/integrations/monitoring";
 import { getMissedCallRecoverySettings } from "@/lib/missed-call-recovery-settings";
+import { sendFollowUpForCall } from "@/lib/follow-up-sms";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const DEFAULT_MISSED_CALL_REVENUE_ESTIMATE = 240;
@@ -341,7 +347,10 @@ async function persistMissedInboundCall(params: URLSearchParams, accountIdentifi
       message: "Missed-call callback was received without CallSid.",
       eventType: "voice_dial_completed"
     });
-    return null;
+    return {
+      callId: null,
+      duplicate: false
+    };
   }
 
   try {
@@ -391,7 +400,10 @@ async function persistMissedInboundCall(params: URLSearchParams, accountIdentifi
       }
     }
 
-    return result.callId;
+    return {
+      callId: result.callId,
+      duplicate: result.duplicate
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
 
@@ -410,7 +422,235 @@ async function persistMissedInboundCall(params: URLSearchParams, accountIdentifi
     });
   }
 
-  return null;
+  return {
+    callId: null,
+    duplicate: false
+  };
+}
+
+async function loadDashboardRowForCallId(
+  supabase: ReturnType<typeof createAdminClient>,
+  callId: string
+) {
+  const { data, error } = await supabase
+    .from("calls")
+    .select(callsSelectFields)
+    .eq("id", callId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return mapSupabaseCallToDashboardRow(data as SupabaseCallRecord, null);
+}
+
+async function markCallFollowUpQueued(
+  supabase: ReturnType<typeof createAdminClient>,
+  callId: string
+) {
+  const { error } = await supabase
+    .from("calls")
+    .update({ status: "under_review" })
+    .eq("id", callId)
+    .neq("status", "resolved");
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function maybeSendAutomaticMissedCallSms({
+  supabase,
+  accountIdentifier,
+  callId
+}: {
+  supabase: ReturnType<typeof createAdminClient>;
+  accountIdentifier: string | null;
+  callId: string | null;
+}) {
+  if (!accountIdentifier || !callId) {
+    console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped.", {
+      accountIdentifier: accountIdentifier ?? undefined,
+      callId,
+      reason: !accountIdentifier ? "missing_account_identifier" : "missing_call_id"
+    });
+    return;
+  }
+
+  let settings;
+
+  try {
+    settings = await getMissedCallRecoverySettings(accountIdentifier);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Automatic missed-call SMS settings could not be loaded.";
+
+    console.warn("[twilio-voice-webhook] Automatic missed-call SMS settings lookup failed.", {
+      accountIdentifier,
+      callId,
+      message
+    });
+
+    await appendIntegrationError({
+      userId: accountIdentifier,
+      provider: "twilio",
+      callId,
+      errorMessage: message,
+      eventType: "automatic_missed_call_sms",
+      severity: "warning"
+    }).catch(() => undefined);
+
+    return;
+  }
+
+  if (!settings.autoFollowUpEnabled) {
+    console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because auto follow-up is disabled.", {
+      accountIdentifier,
+      callId
+    });
+    return;
+  }
+
+  let row: Awaited<ReturnType<typeof loadDashboardRowForCallId>>;
+
+  try {
+    row = await loadDashboardRowForCallId(supabase, callId);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Automatic missed-call SMS call lookup failed.";
+
+    console.warn("[twilio-voice-webhook] Automatic missed-call SMS could not reload the call row.", {
+      accountIdentifier,
+      callId,
+      message
+    });
+
+    await appendIntegrationError({
+      userId: accountIdentifier,
+      provider: "twilio",
+      callId,
+      errorMessage: message,
+      eventType: "automatic_missed_call_sms",
+      severity: "warning"
+    }).catch(() => undefined);
+
+    return;
+  }
+
+  if (!row) {
+    console.warn("[twilio-voice-webhook] Automatic missed-call SMS skipped because the call row could not be reloaded.", {
+      accountIdentifier,
+      callId
+    });
+    return;
+  }
+
+  let result: Awaited<ReturnType<typeof sendFollowUpForCall>>;
+
+  try {
+    result = await sendFollowUpForCall({
+      row,
+      settings,
+      userId: accountIdentifier,
+      source: "automatic_missed_call",
+      enforceCooldown: true
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Automatic missed-call SMS failed before Twilio accepted the request.";
+
+    console.warn("[twilio-voice-webhook] Automatic missed-call SMS send crashed.", {
+      accountIdentifier,
+      callId,
+      message
+    });
+
+    await appendIntegrationError({
+      userId: accountIdentifier,
+      provider: "twilio",
+      callId,
+      errorMessage: message,
+      eventType: "automatic_missed_call_sms",
+      severity: "warning"
+    }).catch(() => undefined);
+
+    return;
+  }
+
+  if (!result.ok) {
+    if (result.reason === "cooldown_active") {
+      await markCallFollowUpQueued(supabase, callId).catch((error) => {
+        console.warn("[twilio-voice-webhook] Automatic missed-call SMS cooldown skip could not update call status.", {
+          accountIdentifier,
+          callId,
+          message: error instanceof Error ? error.message : "Unknown error"
+        });
+      });
+
+      console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because of cooldown.", {
+        accountIdentifier,
+        callId,
+        message: result.message
+      });
+      return;
+    }
+
+    console.warn("[twilio-voice-webhook] Automatic missed-call SMS failed.", {
+      accountIdentifier,
+      callId,
+      reason: result.reason,
+      message: result.message
+    });
+
+    await appendIntegrationError({
+      userId: accountIdentifier,
+      provider: "twilio",
+      callId,
+      errorMessage: result.message,
+      eventType: "automatic_missed_call_sms",
+      severity: "warning"
+    }).catch(() => undefined);
+
+    return;
+  }
+
+  await markCallFollowUpQueued(supabase, callId).catch(async (error) => {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Automatic missed-call SMS sent but the call status could not be updated.";
+
+    console.warn("[twilio-voice-webhook] Automatic missed-call SMS sent but status update failed.", {
+      accountIdentifier,
+      callId,
+      message
+    });
+
+    await appendIntegrationError({
+      userId: accountIdentifier,
+      provider: "twilio",
+      callId,
+      errorMessage: message,
+      eventType: "automatic_missed_call_sms",
+      severity: "warning"
+    }).catch(() => undefined);
+  });
+
+  console.info("[twilio-voice-webhook] Automatic missed-call SMS sent.", {
+    accountIdentifier,
+    callId,
+    mode: result.mode,
+    sid: result.sid
+  });
 }
 
 export async function GET(request: Request) {
@@ -465,7 +705,40 @@ export async function POST(request: Request) {
 
   if (isDialCallback(params, request.url)) {
     if (isMissedDialStatus(dialStatus)) {
-      await persistMissedInboundCall(params, accountIdentifier);
+      const ingestion = await persistMissedInboundCall(params, accountIdentifier);
+
+      if (ingestion.callId && !ingestion.duplicate) {
+        try {
+          const supabase = createAdminClient();
+          await maybeSendAutomaticMissedCallSms({
+            supabase,
+            accountIdentifier,
+            callId: ingestion.callId
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Automatic missed-call SMS failed unexpectedly.";
+
+          console.warn("[twilio-voice-webhook] Automatic missed-call SMS branch failed unexpectedly.", {
+            accountIdentifier: accountIdentifier ?? undefined,
+            callId: ingestion.callId,
+            message
+          });
+
+          if (accountIdentifier) {
+            await appendIntegrationError({
+              userId: accountIdentifier,
+              provider: "twilio",
+              callId: ingestion.callId,
+              errorMessage: message,
+              eventType: "automatic_missed_call_sms",
+              severity: "warning"
+            }).catch(() => undefined);
+          }
+        }
+      }
     } else {
       console.info("[twilio-voice-webhook] Forwarded call completed without missed-call recovery.", {
         callSid,

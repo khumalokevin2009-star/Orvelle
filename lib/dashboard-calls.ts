@@ -622,15 +622,45 @@ export function mapSupabaseCallToDashboardRow(
   const actionStatus = getActionStatus(status, analysis);
   const { noteTop, noteBottom } = getNoteMeta(record, status, category, analysis);
   const conciseAnalystNote = getConciseAnalystNote(record, actionStatus, primaryIssue, analysis);
-  const recoverySummary = `The inbound call reached the Twilio forwarding workflow, but the forwarded destination did not connect. Orvelle has placed the enquiry into the missed call recovery queue for callback action.`;
-  const recoveryNextStep = "Send follow-up and complete a recovery callback.";
+  const recoveryWorkflowStatusLabel: NonNullable<DashboardCallRow["workflowStatusLabel"]> =
+    status === "Resolved"
+      ? "Resolved"
+      : status === "Escalated"
+        ? "Escalated"
+        : status === "Under Review"
+          ? "Follow-Up Sent"
+          : "Action Required";
+  const recoverySummary =
+    recoveryWorkflowStatusLabel === "Follow-Up Sent"
+      ? "The inbound Twilio forwarding attempt did not connect, and an automatic follow-up SMS has been initiated. The case is now waiting for callback completion and booking confirmation."
+      : recoveryWorkflowStatusLabel === "Escalated"
+        ? "The inbound Twilio forwarding attempt did not connect and the case has been escalated for immediate recovery handling."
+        : `The inbound call reached the Twilio forwarding workflow, but the forwarded destination did not connect. Orvelle has placed the enquiry into the missed call recovery queue for callback action.`;
+  const recoveryNextStep =
+    recoveryWorkflowStatusLabel === "Follow-Up Sent"
+      ? "Await callback response and complete a recovery callback."
+      : recoveryWorkflowStatusLabel === "Escalated"
+        ? "Escalate to manager and complete a priority recovery callback."
+        : "Send follow-up and complete a recovery callback.";
   const recoveryAction =
-    "Immediate outbound recovery required. The inbound caller did not reach a connected destination and should receive a callback within the active recovery window.";
+    recoveryWorkflowStatusLabel === "Follow-Up Sent"
+      ? "Automatic recovery SMS has been sent. Complete an outbound callback within the active recovery window and record the booking outcome."
+      : recoveryWorkflowStatusLabel === "Escalated"
+        ? "Immediate management escalation required. Complete a same-window recovery callback and capture the commercial outcome."
+        : "Immediate outbound recovery required. The inbound caller did not reach a connected destination and should receive a callback within the active recovery window.";
   const recoveryNotes = [
     "Inbound Twilio forwarding attempt did not connect to the destination number.",
     `Caller: ${record.caller_phone ?? "Unknown number"}`,
     `Forwarding source: ${formatDisplayLabel(record.source_system, "Twilio")}`
   ];
+
+  if (recoveryWorkflowStatusLabel === "Follow-Up Sent") {
+    recoveryNotes.unshift("Automatic follow-up SMS initiated from the Twilio missed-call workflow.");
+  }
+
+  if (recoveryWorkflowStatusLabel === "Escalated") {
+    recoveryNotes.unshift("Recovery case escalated after the missed forwarding attempt.");
+  }
 
   return {
     id: record.id,
@@ -656,7 +686,12 @@ export function mapSupabaseCallToDashboardRow(
     revenue: formatCurrency(resolvedRevenueValue, currencyCode),
     revenueValue: resolvedRevenueValue,
     noteTop: isMissedCallRecoveryCase ? "Inbound call missed -" : noteTop,
-    noteBottom: isMissedCallRecoveryCase ? "follow-up required" : noteBottom,
+    noteBottom:
+      isMissedCallRecoveryCase && recoveryWorkflowStatusLabel === "Follow-Up Sent"
+        ? "follow-up sent"
+        : isMissedCallRecoveryCase
+          ? "follow-up required"
+          : noteBottom,
     category,
     periodByRange: getPeriodByRange(record.started_at),
     phone: record.caller_phone ?? "Phone number placeholder",
@@ -674,17 +709,25 @@ export function mapSupabaseCallToDashboardRow(
     revenueImpact: formatCurrency(resolvedRevenueValue, currencyCode),
     revenueImpactValue: resolvedRevenueValue,
     analystNote: isMissedCallRecoveryCase
-      ? "Forwarded Twilio call was not answered and requires follow-up."
+      ? recoveryWorkflowStatusLabel === "Follow-Up Sent"
+        ? "Automatic follow-up SMS sent and callback completion is still required."
+        : recoveryWorkflowStatusLabel === "Escalated"
+          ? "Forwarded Twilio call was not answered and the recovery case has been escalated."
+          : "Forwarded Twilio call was not answered and requires follow-up."
       : conciseAnalystNote,
     conciseAnalystNote: isMissedCallRecoveryCase
-      ? "Forwarded Twilio call was not answered."
+      ? recoveryWorkflowStatusLabel === "Follow-Up Sent"
+        ? "Automatic SMS sent; callback still required."
+        : recoveryWorkflowStatusLabel === "Escalated"
+          ? "Missed forwarded call escalated for urgent handling."
+          : "Forwarded Twilio call was not answered."
       : conciseAnalystNote,
     startedAtRaw: record.started_at,
     updatedAtRaw: record.updated_at,
     direction: record.direction,
     recordingFilename: record.recording_filename,
     sourceSystem: record.source_system,
-    workflowStatusLabel: isMissedCallRecoveryCase ? "Action Required" : undefined,
+    workflowStatusLabel: isMissedCallRecoveryCase ? recoveryWorkflowStatusLabel : undefined,
     recoveryOutcomeLabel: isMissedCallRecoveryCase ? "Pending" : undefined,
     recoveredValue: isMissedCallRecoveryCase ? 0 : undefined,
     resolutionReason: isMissedCallRecoveryCase ? null : undefined,
