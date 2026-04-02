@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useState } from "react";
-import { BoltIcon, DashboardIcon, LogoutIcon, SettingsIcon, UploadIcon } from "@/components/icons";
+import {
+  BoltIcon,
+  DashboardIcon,
+  InboxIcon,
+  LogoutIcon,
+  SettingsIcon,
+  UploadIcon
+} from "@/components/icons";
 import { OrvelleBrandIcon } from "@/components/orvelle-brand";
 import { createClient } from "@/lib/supabase/client";
 
@@ -25,6 +32,13 @@ const navItems = [
     mobileLabel: "Upload",
     icon: UploadIcon,
     matches: (pathname: string) => pathname === "/upload"
+  },
+  {
+    href: "/missed-calls",
+    label: "Missed Call Recovery",
+    mobileLabel: "Recovery",
+    icon: InboxIcon,
+    matches: (pathname: string) => pathname === "/missed-calls"
   },
   {
     href: "/automations",
@@ -147,7 +161,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
       </div>
 
       <nav className="fixed inset-x-3 bottom-3 z-40 lg:hidden">
-        <div className="grid grid-cols-4 gap-1 rounded-[20px] border border-[#E5E7EB] bg-[rgba(255,255,255,0.94)] p-1.5 shadow-[0_20px_40px_rgba(17,24,39,0.12)] backdrop-blur-[18px]">
+        <div className="grid grid-cols-5 gap-1 rounded-[20px] border border-[#E5E7EB] bg-[rgba(255,255,255,0.94)] p-1.5 shadow-[0_20px_40px_rgba(17,24,39,0.12)] backdrop-blur-[18px]">
           {navItems.map(({ href, icon: Icon, label, mobileLabel, matches }) => {
             const isActive = matches(pathname);
 
