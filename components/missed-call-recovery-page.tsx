@@ -114,7 +114,9 @@ export function MissedCallRecoveryPage() {
   const [rows, setRows] = useState(demoMissedCallRecoveryRows);
   const [selectedCallId, setSelectedCallId] = useState(demoMissedCallRecoveryRows[0]?.id ?? null);
   const [activityMessage, setActivityMessage] = useState<string | null>(null);
+  const [activityTone, setActivityTone] = useState<"success" | "error">("success");
   const [activeFilter, setActiveFilter] = useState<QueueFilter>("All");
+  const [sendingCallId, setSendingCallId] = useState<string | null>(null);
 
   const filteredRows = useMemo(
     () => rows.filter((row) => matchesFilter(row, activeFilter)),
@@ -143,7 +145,7 @@ export function MissedCallRecoveryPage() {
     };
   }, [rows]);
 
-  function updateRowStatus(id: string, nextStatus: QueueStatusLabel, message: string) {
+  function applyRowStatus(id: string, nextStatus: QueueStatusLabel) {
     setRows((current) =>
       current.map((row) => {
         if (row.id !== id) {
@@ -190,17 +192,51 @@ export function MissedCallRecoveryPage() {
         };
       })
     );
+  }
 
+  function updateRowStatus(id: string, nextStatus: QueueStatusLabel, message: string) {
+    applyRowStatus(id, nextStatus);
     setSelectedCallId(id);
     setActivityMessage(message);
+    setActivityTone("success");
   }
 
   function handleViewDetails(id: string) {
     router.push(`/call/${id}`);
   }
 
-  function handleSendFollowUp(id: string) {
-    updateRowStatus(id, "Follow-Up Sent", "Follow-up action has been queued and logged.");
+  async function handleSendFollowUp(id: string) {
+    setSendingCallId(id);
+    setActivityMessage(null);
+
+    try {
+      const response = await fetch(`/api/calls/${id}/follow-up`, {
+        method: "POST"
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            message?: string;
+            statusLabel?: QueueStatusLabel;
+          }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to send the follow-up right now.");
+      }
+
+      updateRowStatus(
+        id,
+        payload?.statusLabel ?? "Follow-Up Sent",
+        payload?.message || "Follow-up action has been queued and logged."
+      );
+    } catch (error) {
+      setSelectedCallId(id);
+      setActivityTone("error");
+      setActivityMessage(error instanceof Error ? error.message : "Unable to send the follow-up right now.");
+    } finally {
+      setSendingCallId(null);
+    }
   }
 
   function handleMarkResolved(id: string) {
@@ -215,9 +251,21 @@ export function MissedCallRecoveryPage() {
       />
 
       {activityMessage ? (
-        <section className="surface-secondary motion-fade-up border border-[#E5E7EB] px-4 py-4 sm:px-5">
-          <div className="type-section-title text-[15px]">Action updated</div>
-          <p className="type-body-text mt-2 text-[14px]">{activityMessage}</p>
+        <section
+          className={`surface-secondary motion-fade-up border px-4 py-4 sm:px-5 ${
+            activityTone === "error" ? "border-[#F2D8D8]" : "border-[#E5E7EB]"
+          }`}
+        >
+          <div className="type-section-title text-[15px]">
+            {activityTone === "error" ? "Action error" : "Action updated"}
+          </div>
+          <p
+            className={`mt-2 text-[14px] ${
+              activityTone === "error" ? "text-[#A24E4E]" : "type-body-text"
+            }`}
+          >
+            {activityMessage}
+          </p>
         </section>
       ) : null}
 
@@ -370,9 +418,10 @@ export function MissedCallRecoveryPage() {
                           <button
                             type="button"
                             onClick={() => handleSendFollowUp(row.id)}
-                            className="button-secondary-ui inline-flex min-h-[40px] items-center justify-center px-3.5 text-[13px] transition hover:-translate-y-[1px] hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:shadow-[0_8px_18px_rgba(17,24,39,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                            disabled={sendingCallId === row.id}
+                            className="button-secondary-ui inline-flex min-h-[40px] items-center justify-center px-3.5 text-[13px] transition hover:-translate-y-[1px] hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:shadow-[0_8px_18px_rgba(17,24,39,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF] disabled:shadow-none"
                           >
-                            Send Follow-Up
+                            {sendingCallId === row.id ? "Sending..." : "Send Follow-Up"}
                           </button>
                           <button
                             type="button"

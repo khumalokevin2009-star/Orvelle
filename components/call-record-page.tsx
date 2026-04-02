@@ -174,10 +174,12 @@ export function CallRecordPage({
   const [row, setRow] = useState(initialRow);
   const [detailState, setDetailState] = useState(() => normalizeDetailState(detail));
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeTone, setNoticeTone] = useState<"success" | "error">("success");
   const [isGeneratingTranscript, setIsGeneratingTranscript] = useState(false);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [isSendingFollowUp, setIsSendingFollowUp] = useState(false);
   const analysisSummary = detailState.analysisSummary ?? defaultAnalysisSummary;
   const operationalOutcome = row.callOutcome ?? analysisSummary.callOutcome;
   const isMissedCallRecoveryRecord = row.id.startsWith("missed-call-");
@@ -200,6 +202,7 @@ export function CallRecordPage({
 
   function handleResolve() {
     if (row.status === "Resolved") {
+      setNoticeTone("error");
       setNotice("This interaction record is already marked as resolved.");
       return;
     }
@@ -220,32 +223,64 @@ export function CallRecordPage({
         ? currentRow.notes
         : ["Interaction marked as resolved from the call detail page.", ...currentRow.notes]
     }));
+    setNoticeTone("success");
     setNotice("Interaction marked as resolved.");
   }
 
-  function handleSendFollowUp() {
+  async function handleSendFollowUp() {
+    if (isSendingFollowUp) {
+      return;
+    }
+
     if (row.status === "Resolved") {
+      setNoticeTone("error");
       setNotice("Resolved interaction records do not require additional follow-up scheduling.");
       return;
     }
 
-    setRow((currentRow) => ({
-      ...currentRow,
-      status: currentRow.status === "Escalated" ? "Escalated" : "Under Review",
-      workflowStatusLabel: "Follow-Up Sent",
-      statusTone: currentRow.status === "Escalated" ? "critical" : "pending",
-      dueBy: "Within 2 Hours",
-      recommendedAction:
-        "Immediate outbound follow-up required. Lead exhibited high purchase intent and should be contacted within the active recovery window. Document call outcome and booking disposition upon completion.",
-      notes: currentRow.notes.includes("Follow-up sent from the call detail page.")
-        ? currentRow.notes
-        : ["Follow-up sent from the call detail page.", ...currentRow.notes]
-    }));
-    setNotice("Follow-up sent and recovery workflow updated.");
+    setIsSendingFollowUp(true);
+    setNotice(null);
+
+    try {
+      const response = await fetch(`/api/calls/${row.id}/follow-up`, {
+        method: "POST"
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            message?: string;
+          }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to send the follow-up right now.");
+      }
+
+      setRow((currentRow) => ({
+        ...currentRow,
+        status: currentRow.status === "Escalated" ? "Escalated" : "Under Review",
+        workflowStatusLabel: "Follow-Up Sent",
+        statusTone: currentRow.status === "Escalated" ? "critical" : "pending",
+        dueBy: "Within 2 Hours",
+        recommendedAction:
+          "Immediate outbound follow-up required. Lead exhibited high purchase intent and should be contacted within the active recovery window. Document call outcome and booking disposition upon completion.",
+        notes: currentRow.notes.includes("Follow-up sent from the call detail page.")
+          ? currentRow.notes
+          : ["Follow-up sent from the call detail page.", ...currentRow.notes]
+      }));
+      setNoticeTone("success");
+      setNotice(payload?.message || "Follow-up sent and recovery workflow updated.");
+    } catch (error) {
+      setNoticeTone("error");
+      setNotice(error instanceof Error ? error.message : "Unable to send the follow-up right now.");
+    } finally {
+      setIsSendingFollowUp(false);
+    }
   }
 
   function handleEscalate() {
     if (row.status === "Resolved") {
+      setNoticeTone("error");
       setNotice("Resolved interaction records cannot be escalated.");
       return;
     }
@@ -265,6 +300,7 @@ export function CallRecordPage({
         ? currentRow.notes
         : ["Case escalated from the call detail page.", ...currentRow.notes]
     }));
+    setNoticeTone("success");
     setNotice("Case escalated for immediate recovery handling.");
   }
 
@@ -276,6 +312,7 @@ export function CallRecordPage({
     }
 
     pushNote(note.trim());
+    setNoticeTone("success");
     setNotice("Operational note recorded.");
   }
 
@@ -287,6 +324,7 @@ export function CallRecordPage({
     setIsGeneratingTranscript(true);
     setTranscriptError(null);
     setNotice(null);
+    setNoticeTone("success");
 
     try {
       const response = await fetch(`/api/calls/${row.id}/transcript`, {
@@ -328,6 +366,7 @@ export function CallRecordPage({
         }
       }));
       setAnalysisError(null);
+      setNoticeTone("success");
       setNotice(payload?.message || "Transcript generated and stored successfully.");
     } catch (error) {
       setTranscriptError(error instanceof Error ? error.message : "Transcript generation failed.");
@@ -344,6 +383,7 @@ export function CallRecordPage({
     setIsGeneratingAnalysis(true);
     setAnalysisError(null);
     setNotice(null);
+    setNoticeTone("success");
 
     try {
       const response = await fetch(`/api/calls/${row.id}/analysis`, {
@@ -370,6 +410,7 @@ export function CallRecordPage({
         setDetailState(normalizeDetailState(payload.detail));
       }
 
+      setNoticeTone("success");
       setNotice(payload?.message || "Structured analysis generated and stored successfully.");
       router.refresh();
     } catch (error) {
@@ -382,7 +423,13 @@ export function CallRecordPage({
   return (
       <main>
       {notice ? (
-        <div className="surface-primary mb-4 px-4 py-3 text-[14px] font-medium text-[#374151]">
+        <div
+          className={`surface-primary mb-4 border px-4 py-3 text-[14px] font-medium ${
+            noticeTone === "error"
+              ? "border-[#F2D8D8] text-[#A24E4E]"
+              : "border-[#E5E7EB] text-[#374151]"
+          }`}
+        >
           {notice}
         </div>
       ) : null}
@@ -478,10 +525,10 @@ export function CallRecordPage({
                   <button
                     type="button"
                     onClick={handleSendFollowUp}
-                    disabled={row.status === "Resolved"}
+                    disabled={row.status === "Resolved" || isSendingFollowUp}
                     className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
                   >
-                    Send Follow-Up
+                    {isSendingFollowUp ? "Sending Follow-Up..." : "Send Follow-Up"}
                   </button>
                   <button
                     type="button"
@@ -716,10 +763,10 @@ export function CallRecordPage({
               <button
                 type="button"
                 onClick={handleSendFollowUp}
-                disabled={row.status === "Resolved"}
+                disabled={row.status === "Resolved" || isSendingFollowUp}
                 className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
                 >
-                Send Follow-Up
+                {isSendingFollowUp ? "Sending Follow-Up..." : "Send Follow-Up"}
               </button>
               <button
                 type="button"
