@@ -1,15 +1,22 @@
 import "server-only";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import type { User } from "@supabase/supabase-js";
+import {
+  ensureProviderConnectionState,
+  readProviderConnectionState,
+  type IntegrationConnectionHealth,
+  type IntegrationStatus
+} from "@/lib/integrations/connection-status";
 
 export type TwilioIntegrationSnapshot = {
   accountIdentifier: string;
   webhookUrl: string;
-  status: "connected" | "not_connected";
+  status: IntegrationStatus;
+  connectionHealth: IntegrationConnectionHealth;
   statusDescription: string;
   endpointReady: boolean;
-  totalCallsReceived: number;
   lastEventAt: string | null;
+  lastErrorMessage: string | null;
   instructions: string[];
 };
 
@@ -28,12 +35,13 @@ export function deriveOriginFromHeaders(headerStore: Headers) {
 }
 
 export async function getTwilioIntegrationSnapshot({
-  accountIdentifier,
+  user,
   origin
 }: {
-  accountIdentifier: string;
+  user: User;
   origin: string;
 }): Promise<TwilioIntegrationSnapshot> {
+  const accountIdentifier = user.id;
   const endpointReady = Boolean(
     process.env.TWILIO_AUTH_TOKEN &&
       process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -41,52 +49,63 @@ export async function getTwilioIntegrationSnapshot({
       process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 
-  let totalCallsReceived = 0;
-  let lastEventAt: string | null = null;
+  let integrationState = readProviderConnectionState({
+    appMetadata: user.app_metadata,
+    provider: "twilio",
+    accountIdentifier
+  });
 
-  try {
-    const supabase = createAdminClient();
-    const { data, count, error } = await supabase
-      .from("calls")
-      .select("started_at", { count: "exact" })
-      .eq("source_system", "twilio")
-      .order("started_at", { ascending: false })
-      .limit(1);
+  if (!integrationState) {
+    try {
+      integrationState = await ensureProviderConnectionState({
+        userId: user.id,
+        provider: "twilio",
+        accountIdentifier
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to initialize Twilio integration status.";
 
-    if (error) {
-      throw error;
+      console.error("[integrations] Failed to initialize Twilio integration state.", {
+        accountIdentifier,
+        message
+      });
     }
-
-    totalCallsReceived = count ?? 0;
-    lastEventAt = data?.[0]?.started_at ?? null;
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unable to resolve Twilio integration status.";
-
-    console.error("[integrations] Failed to resolve Twilio integration snapshot.", {
-      message
-    });
   }
 
-  const status = totalCallsReceived > 0 ? "connected" : "not_connected";
+  const resolvedStatus =
+    !endpointReady
+      ? "error"
+      : integrationState?.status ?? "waiting_for_data";
+  const resolvedHealth =
+    !endpointReady
+      ? "error"
+      : integrationState?.connectionHealth ?? "waiting";
+  const lastErrorMessage =
+    !endpointReady
+      ? "Webhook ingestion is not fully configured yet. Finish the server-side setup before going live."
+      : integrationState?.lastErrorMessage ?? null;
+  const statusDescription =
+    resolvedStatus === "connected"
+      ? "Twilio is connected and valid events are reaching Orvelle successfully."
+      : resolvedStatus === "error"
+        ? lastErrorMessage ??
+          "The Twilio integration needs attention before it can receive live call events reliably."
+        : "Twilio is configured, but Orvelle is still waiting for the first valid webhook event.";
 
   return {
     accountIdentifier,
-    webhookUrl: `${origin}/api/webhooks/twilio`,
-    status,
-    statusDescription:
-      status === "connected"
-        ? "Twilio events are already reaching Orvelle and call records are being ingested successfully."
-        : endpointReady
-          ? "No completed call or recording events have been received from Twilio yet."
-          : "Webhook ingestion is not fully configured yet. Finish the server-side setup before going live.",
+    webhookUrl: `${origin}/api/webhooks/twilio?account=${encodeURIComponent(accountIdentifier)}`,
+    status: resolvedStatus,
+    connectionHealth: resolvedHealth,
+    statusDescription,
     endpointReady,
-    totalCallsReceived,
-    lastEventAt,
+    lastEventAt: integrationState?.lastEventReceived ?? null,
+    lastErrorMessage,
     instructions: [
-      "Set your Twilio Voice status callback and recording status callback to the webhook URL below.",
+      "Set your Twilio Voice status callback and recording status callback to the webhook URL below exactly as shown, including the account query parameter.",
       "Use POST with application/x-www-form-urlencoded so completed call and recording events can be validated safely.",
       "Keep the account identifier available for internal mapping and support coordination during rollout."
     ]

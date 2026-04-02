@@ -34,25 +34,31 @@ function SectionCard({
 
 function StatusIndicator({
   status,
+  connectionHealth,
   description
 }: {
-  status: "connected" | "not_connected";
+  status: "connected" | "waiting_for_data" | "error";
+  connectionHealth: "healthy" | "waiting" | "error";
   description: string;
 }) {
-  const isConnected = status === "connected";
+  const toneClasses =
+    connectionHealth === "healthy"
+      ? "bg-[#10B981]"
+      : connectionHealth === "error"
+        ? "bg-[#DC2626]"
+        : "bg-[#F59E0B]";
+  const statusLabel =
+    status === "connected"
+      ? "Connected"
+      : status === "error"
+        ? "Error"
+        : "Waiting for data";
 
   return (
     <div className="surface-secondary flex items-start gap-3 px-4 py-4">
-      <span
-        className={`mt-1.5 h-2.5 w-2.5 rounded-full ${
-          isConnected ? "bg-[#10B981]" : "bg-[#9CA3AF]"
-        }`}
-        aria-hidden="true"
-      />
+      <span className={`mt-1.5 h-2.5 w-2.5 rounded-full ${toneClasses}`} aria-hidden="true" />
       <div>
-        <div className="type-section-title text-[15px]">
-          {isConnected ? "Connected" : "Not connected"}
-        </div>
+        <div className="type-section-title text-[15px]">{statusLabel}</div>
         <p className="type-body-text mt-1 text-[13px]">{description}</p>
       </div>
     </div>
@@ -119,10 +125,11 @@ export function IntegrationSettingsPage({
   accountIdentifier,
   webhookUrl,
   status,
+  connectionHealth,
   statusDescription,
   endpointReady,
-  totalCallsReceived,
   lastEventAt,
+  lastErrorMessage,
   instructions
 }: IntegrationSettingsPageProps) {
   const [copiedField, setCopiedField] = useState<"webhook" | "account" | null>(null);
@@ -137,18 +144,28 @@ export function IntegrationSettingsPage({
     () => [
       {
         label: "Connection Status",
-        value: status === "connected" ? "Connected" : "Not connected"
+        value:
+          status === "connected"
+            ? "Connected"
+            : status === "error"
+              ? "Error"
+              : "Waiting for data"
       },
       {
-        label: "Twilio Calls Received",
-        value: String(totalCallsReceived)
+        label: "Connection Health",
+        value:
+          connectionHealth === "healthy"
+            ? "Healthy"
+            : connectionHealth === "error"
+              ? "Attention required"
+              : "Awaiting first event"
       },
       {
         label: "Latest Event",
         value: formatEventTime(lastEventAt)
       }
     ],
-    [lastEventAt, status, totalCallsReceived]
+    [connectionHealth, lastEventAt, status]
   );
 
   async function handleCopy(value: string, field: "webhook" | "account") {
@@ -256,7 +273,11 @@ export function IntegrationSettingsPage({
             title="Connection Status"
             description="Use this panel to confirm the webhook endpoint is configured and ready before sending live Twilio traffic."
           >
-            <StatusIndicator status={status} description={statusDescription} />
+            <StatusIndicator
+              status={status}
+              connectionHealth={connectionHealth}
+              description={statusDescription}
+            />
 
             <div className="mt-4 grid gap-3">
               {connectionSummary.map((item) => (
@@ -273,6 +294,12 @@ export function IntegrationSettingsPage({
                 </div>
               ))}
             </div>
+
+            {lastErrorMessage ? (
+              <div className="mt-4 rounded-[12px] border border-[#FECACA] bg-[#FEF2F2] px-4 py-4 text-[13px] text-[#991B1B]">
+                {lastErrorMessage}
+              </div>
+            ) : null}
 
             <div className="mt-5 rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] p-4">
               <div className="type-section-title text-[15px]">Test webhook</div>

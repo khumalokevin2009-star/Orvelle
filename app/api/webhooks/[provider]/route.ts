@@ -1,5 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { processCallAfterIngestion } from "@/lib/call-processing";
+import { updateProviderConnectionState } from "@/lib/integrations/connection-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   logWebhookFailure,
@@ -24,6 +25,8 @@ export async function POST(
   context: { params: Promise<{ provider: string }> }
 ) {
   const { provider } = await context.params;
+  const requestUrl = new URL(request.url);
+  const accountIdentifier = requestUrl.searchParams.get("account")?.trim() || null;
   const handler = getWebhookProviderHandler(provider);
   const requestMetadata = buildRequestMetadata(request, provider);
 
@@ -171,6 +174,32 @@ export async function POST(
       });
     }
 
+    if (accountIdentifier) {
+      try {
+        await updateProviderConnectionState({
+          userId: accountIdentifier,
+          provider,
+          accountIdentifier,
+          status: "connected",
+          connectionHealth: "healthy",
+          lastEventReceived: normalizedPayload.timestamp
+        });
+      } catch (statusError) {
+        const message =
+          statusError instanceof Error
+            ? statusError.message
+            : "Unknown integration status update failure.";
+
+        logWebhookWarning("Webhook ingested but integration status update failed.", {
+          ...requestMetadata,
+          accountIdentifier,
+          externalCallId: normalizedPayload.external_call_id,
+          reason: "integration_status_update_failed",
+          message
+        });
+      }
+    }
+
     if (ingestionResult.body.callId && !ingestionResult.body.duplicate) {
       const scheduledCallId = ingestionResult.body.callId;
 
@@ -183,6 +212,33 @@ export async function POST(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unexpected webhook ingestion failure.";
+
+    if (accountIdentifier) {
+      try {
+        await updateProviderConnectionState({
+          userId: accountIdentifier,
+          provider,
+          accountIdentifier,
+          status: "error",
+          connectionHealth: "error",
+          lastEventReceived: normalizedPayload.timestamp,
+          lastErrorMessage: message
+        });
+      } catch (statusError) {
+        const statusMessage =
+          statusError instanceof Error
+            ? statusError.message
+            : "Unknown integration error state update failure.";
+
+        logWebhookWarning("Webhook failure could not update integration error state.", {
+          ...requestMetadata,
+          accountIdentifier,
+          externalCallId: normalizedPayload.external_call_id,
+          reason: "integration_error_state_update_failed",
+          message: statusMessage
+        });
+      }
+    }
 
     logWebhookFailure("Webhook ingestion failed.", {
       ...requestMetadata,

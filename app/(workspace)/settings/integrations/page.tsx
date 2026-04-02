@@ -17,7 +17,7 @@ export default async function SettingsIntegrationsPage() {
   const headerStore = await headers();
   const origin = deriveOriginFromHeaders(headerStore);
   const integration = await getTwilioIntegrationSnapshot({
-    accountIdentifier: user.id,
+    user,
     origin
   });
 

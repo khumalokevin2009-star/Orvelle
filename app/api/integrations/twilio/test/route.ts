@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth/session";
+import { ensureProviderConnectionState } from "@/lib/integrations/connection-status";
 import { deriveOriginFromHeaders } from "@/lib/integrations/twilio-settings";
 import { twilioWebhookHandler } from "@/lib/webhooks/providers/twilio-handler";
 import {
@@ -31,7 +32,8 @@ export async function POST(request: Request) {
   }
 
   const origin = deriveOriginFromHeaders(request.headers);
-  const webhookUrl = `${origin}/api/webhooks/twilio`;
+  const accountIdentifier = user.id;
+  const webhookUrl = `${origin}/api/webhooks/twilio?account=${encodeURIComponent(accountIdentifier)}`;
   const rawBody = new URLSearchParams({
     CallSid: `twilio-test-${user.id.slice(0, 8)}-${Date.now()}`,
     From: "+441234567890",
@@ -72,8 +74,14 @@ export async function POST(request: Request) {
       contentType: "application/x-www-form-urlencoded"
     });
 
+    await ensureProviderConnectionState({
+      userId: user.id,
+      provider: "twilio",
+      accountIdentifier
+    });
+
     console.info("[integrations] Twilio webhook connection test passed.", {
-      accountIdentifier: user.id,
+      accountIdentifier,
       eventType: parsedWebhook.metadata.eventType,
       providerEvent: parsedWebhook.metadata.providerEvent ?? null,
       answered: parsedWebhook.metadata.answered,
@@ -94,7 +102,7 @@ export async function POST(request: Request) {
         : "Unexpected Twilio webhook verification failure.";
 
     console.error("[integrations] Twilio webhook connection test failed.", {
-      accountIdentifier: user.id,
+      accountIdentifier,
       message
     });
 
