@@ -121,6 +121,19 @@ function formatEventTime(value: string | null) {
   }).format(parsed);
 }
 
+function formatMonitoringLabel(type: "call_ingested" | "ingestion_failed" | "analysis_failed") {
+  switch (type) {
+    case "call_ingested":
+      return "Call ingested";
+    case "ingestion_failed":
+      return "Ingestion failed";
+    case "analysis_failed":
+      return "Analysis failed";
+    default:
+      return type;
+  }
+}
+
 export function IntegrationSettingsPage({
   accountIdentifier,
   webhookUrl,
@@ -130,6 +143,7 @@ export function IntegrationSettingsPage({
   endpointReady,
   lastEventAt,
   lastErrorMessage,
+  monitoring,
   instructions
 }: IntegrationSettingsPageProps) {
   const [copiedField, setCopiedField] = useState<"webhook" | "account" | null>(null);
@@ -329,6 +343,66 @@ export function IntegrationSettingsPage({
           </SectionCard>
         </aside>
       </div>
+
+      <section className="mt-4 space-y-4 lg:mt-5">
+        <SectionCard
+          title="Integration Activity"
+          description="Lightweight internal monitoring for ingestion volume, failure counts, and recent provider activity on this account."
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="surface-secondary px-4 py-4">
+              <div className="type-label-text text-[11px]">Total calls ingested</div>
+              <div className="type-page-title mt-3 text-[28px]">{monitoring.totalCallsIngested}</div>
+            </div>
+            <div className="surface-secondary px-4 py-4">
+              <div className="type-label-text text-[11px]">Failed ingestions</div>
+              <div className="type-page-title mt-3 text-[28px]">{monitoring.failedIngestions}</div>
+            </div>
+            <div className="surface-secondary px-4 py-4">
+              <div className="type-label-text text-[11px]">Analysis failures</div>
+              <div className="type-page-title mt-3 text-[28px]">{monitoring.analysisFailures}</div>
+            </div>
+          </div>
+
+          <div className="mt-5 overflow-hidden rounded-[12px] border border-[#E5E7EB]">
+            <div className="grid grid-cols-[minmax(0,1.2fr)_120px_170px_170px] gap-4 border-b border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3 text-[12px] font-medium uppercase tracking-[0.08em] text-[#6B7280]">
+              <span>Activity</span>
+              <span>Provider</span>
+              <span>User ID</span>
+              <span>Timestamp</span>
+            </div>
+            <div className="divide-y divide-[#E5E7EB]">
+              {monitoring.recentActivity.length > 0 ? (
+                monitoring.recentActivity.map((event) => (
+                  <div
+                    key={event.id}
+                    className="grid grid-cols-1 gap-3 px-4 py-4 text-[14px] text-[#111827] md:grid-cols-[minmax(0,1.2fr)_120px_170px_170px] md:items-start"
+                  >
+                    <div className="min-w-0">
+                      <div className="type-section-title text-[15px]">
+                        {formatMonitoringLabel(event.type)}
+                      </div>
+                      {event.message ? (
+                        <p className="type-body-text mt-1 text-[13px]">{event.message}</p>
+                      ) : null}
+                      {event.callId ? (
+                        <p className="type-muted-text mt-2 text-[12px]">Call ID: {event.callId}</p>
+                      ) : null}
+                    </div>
+                    <div className="type-body-text text-[13px]">{event.provider}</div>
+                    <div className="type-body-text break-all text-[13px]">{event.userId}</div>
+                    <div className="type-body-text text-[13px]">{formatEventTime(event.createdAt)}</div>
+                  </div>
+                ))
+              ) : (
+                <div className="px-4 py-5 text-[14px] text-[#6B7280]">
+                  No integration activity has been recorded yet for this account.
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionCard>
+      </section>
     </main>
   );
 }

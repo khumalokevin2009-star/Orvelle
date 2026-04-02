@@ -2,6 +2,7 @@ import { after, NextResponse } from "next/server";
 import { processCallAfterIngestion } from "@/lib/call-processing";
 import { updateProviderConnectionState } from "@/lib/integrations/connection-status";
 import { appendIntegrationError } from "@/lib/integrations/error-log";
+import { recordMonitoringEvent } from "@/lib/integrations/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   logWebhookFailure,
@@ -54,6 +55,14 @@ async function persistIntegrationFailure({
       callId,
       errorMessage,
       eventType
+    });
+
+    await recordMonitoringEvent({
+      userId: accountIdentifier,
+      provider,
+      type: "ingestion_failed",
+      callId,
+      message: errorMessage
     });
   } catch (error) {
     const message =
@@ -329,11 +338,46 @@ export async function POST(
       }
     }
 
+    if (accountIdentifier && !ingestionResult.body.duplicate && !ingestionResult.body.warning) {
+      try {
+        await recordMonitoringEvent({
+          userId: accountIdentifier,
+          provider,
+          type: "call_ingested",
+          callId: ingestionResult.body.callId ?? null,
+          message: ingestionResult.body.updated
+            ? "Provider event updated an existing call record."
+            : "Provider event created a new call record."
+        });
+      } catch (monitoringError) {
+        const message =
+          monitoringError instanceof Error
+            ? monitoringError.message
+            : "Unknown monitoring event failure.";
+
+        logWebhookWarning("Webhook ingested but monitoring event could not be recorded.", {
+          ...requestMetadata,
+          accountIdentifier,
+          externalCallId: normalizedPayload.external_call_id,
+          reason: "monitoring_event_failed",
+          message
+        });
+      }
+    }
+
     if (ingestionResult.body.callId && !ingestionResult.body.duplicate) {
       const scheduledCallId = ingestionResult.body.callId;
 
       after(async () => {
-        await processCallAfterIngestion(scheduledCallId, { supabase });
+        await processCallAfterIngestion(scheduledCallId, {
+          supabase,
+          monitoringContext: accountIdentifier
+            ? {
+                userId: accountIdentifier,
+                provider
+              }
+            : undefined
+        });
       });
     }
 

@@ -1,5 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth/session";
+import { recordMonitoringEvent } from "@/lib/integrations/monitoring";
 import { ingestCall } from "@/lib/call-ingestion";
 import { processCallAfterIngestion } from "@/lib/call-processing";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -203,7 +204,8 @@ async function handlePrepareUploads(
 
 async function handleFinalizeUploads(
   supabase: ReturnType<typeof createAdminClient>,
-  uploads: FinalizeUploadFile[]
+  uploads: FinalizeUploadFile[],
+  userId: string
 ) {
   const completedCallIds: string[] = [];
   const results = await Promise.all(
@@ -230,6 +232,7 @@ async function handleFinalizeUploads(
         const providerPayload = buildManualUploadProviderPayload(upload);
         const ingestedCall = await ingestCall(providerPayload, {
           supabase,
+          userId,
           callerName: defaultCallerName,
           assignedOwner: defaultAssignedOwner,
           recordingFileName: upload.fileName
@@ -238,6 +241,25 @@ async function handleFinalizeUploads(
         if (!ingestedCall.callId) {
           await supabase.storage.from(CALL_RECORDINGS_BUCKET).remove([upload.storagePath]);
           throw new Error("Call ingestion completed without returning a call record id.");
+        }
+
+        try {
+          await recordMonitoringEvent({
+            userId,
+            provider: providerPayload.provider,
+            type: "call_ingested",
+            callId: ingestedCall.callId,
+            message: "Manual upload finalized successfully."
+          });
+        } catch (monitoringError) {
+          console.warn("[call-uploads] Monitoring event failed after successful ingestion.", {
+            userId,
+            callId: ingestedCall.callId,
+            message:
+              monitoringError instanceof Error
+                ? monitoringError.message
+                : "Unknown monitoring failure."
+          });
         }
 
         return {
@@ -261,6 +283,23 @@ async function handleFinalizeUploads(
           message: failure.message
         });
 
+        try {
+          await recordMonitoringEvent({
+            userId,
+            provider: defaultSourceSystem,
+            type: "ingestion_failed",
+            message: failure.message
+          });
+        } catch (monitoringError) {
+          console.warn("[call-uploads] Monitoring event failed after ingestion error.", {
+            userId,
+            message:
+              monitoringError instanceof Error
+                ? monitoringError.message
+                : "Unknown monitoring failure."
+          });
+        }
+
         return {
           clientId,
           ok: false,
@@ -280,7 +319,15 @@ async function handleFinalizeUploads(
   if (completedCallIds.length > 0) {
     after(async () => {
       await Promise.allSettled(
-        completedCallIds.map((callId) => processCallAfterIngestion(callId, { supabase }))
+        completedCallIds.map((callId) =>
+          processCallAfterIngestion(callId, {
+            supabase,
+            monitoringContext: {
+              userId,
+              provider: defaultSourceSystem
+            }
+          })
+        )
       );
     });
   }
@@ -424,7 +471,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return handleFinalizeUploads(supabase, uploads);
+    return handleFinalizeUploads(supabase, uploads, user.id);
   }
 
   return NextResponse.json(

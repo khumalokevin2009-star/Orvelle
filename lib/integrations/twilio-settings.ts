@@ -7,6 +7,10 @@ import {
   type IntegrationConnectionHealth,
   type IntegrationStatus
 } from "@/lib/integrations/connection-status";
+import {
+  readMonitoringSnapshot,
+  type MonitoringEventRecord
+} from "@/lib/integrations/monitoring";
 
 export type TwilioIntegrationSnapshot = {
   accountIdentifier: string;
@@ -17,6 +21,12 @@ export type TwilioIntegrationSnapshot = {
   endpointReady: boolean;
   lastEventAt: string | null;
   lastErrorMessage: string | null;
+  monitoring: {
+    totalCallsIngested: number;
+    failedIngestions: number;
+    analysisFailures: number;
+    recentActivity: MonitoringEventRecord[];
+  };
   instructions: string[];
 };
 
@@ -54,6 +64,7 @@ export async function getTwilioIntegrationSnapshot({
     provider: "twilio",
     accountIdentifier
   });
+  const monitoring = readMonitoringSnapshot(user.app_metadata);
 
   if (!integrationState) {
     try {
@@ -104,6 +115,7 @@ export async function getTwilioIntegrationSnapshot({
     endpointReady,
     lastEventAt: integrationState?.lastEventReceived ?? null,
     lastErrorMessage,
+    monitoring,
     instructions: [
       "Set your Twilio Voice status callback and recording status callback to the webhook URL below exactly as shown, including the account query parameter.",
       "Use POST with application/x-www-form-urlencoded so completed call and recording events can be validated safely.",

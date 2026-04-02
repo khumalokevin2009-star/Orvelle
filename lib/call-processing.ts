@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { analyzeTranscript } from "@/lib/analysis/service";
+import { recordMonitoringEvent } from "@/lib/integrations/monitoring";
 import { transcribeAudioAsset } from "@/lib/transcription/service";
 
 type SupabaseAdminClient = ReturnType<typeof createAdminClient>;
@@ -260,6 +261,10 @@ export async function processCallAfterIngestion(
   callId: string,
   options: {
     supabase?: SupabaseAdminClient;
+    monitoringContext?: {
+      userId: string;
+      provider: string;
+    };
   } = {}
 ): Promise<ProcessCallResult> {
   const supabase = options.supabase ?? createAdminClient();
@@ -399,6 +404,27 @@ export async function processCallAfterIngestion(
     );
 
     await setCallLifecycleStatus(supabase, callId, "failed");
+
+    if (options.monitoringContext?.userId) {
+      try {
+        await recordMonitoringEvent({
+          userId: options.monitoringContext.userId,
+          provider: options.monitoringContext.provider,
+          type: "analysis_failed",
+          callId,
+          message
+        });
+      } catch (monitoringError) {
+        console.warn("[call-processing] Monitoring event failed after analysis failure.", {
+          callId,
+          userId: options.monitoringContext.userId,
+          message:
+            monitoringError instanceof Error
+              ? monitoringError.message
+              : "Unknown monitoring failure."
+        });
+      }
+    }
 
     console.error("[call-processing] Automatic analysis failed.", {
       callId,
