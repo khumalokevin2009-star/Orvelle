@@ -10,6 +10,25 @@ import { createAdminClient } from "@/lib/supabase/admin";
 const DEFAULT_MISSED_CALL_REVENUE_ESTIMATE = 240;
 const MISSED_DIAL_STATUSES = new Set(["busy", "failed", "canceled", "no-answer", "noanswer"]);
 const FALLBACK_FORWARD_NUMBER = process.env.TWILIO_VOICE_FORWARD_NUMBER?.trim() || null;
+const UK_DEFAULT_COUNTRY_CODE = "+44";
+
+type ForwardTargetResolution =
+  | {
+      ok: true;
+      number: string;
+      source: "settings" | "env";
+    }
+  | {
+      ok: false;
+      reason:
+        | "missing_account_identifier"
+        | "settings_lookup_failed"
+        | "missing_callback_number"
+        | "invalid_callback_number"
+        | "invalid_env_fallback"
+        | "missing_forward_number";
+      message: string;
+    };
 
 function escapeXml(value: string) {
   return value
@@ -68,6 +87,30 @@ function getFormValue(params: URLSearchParams, key: string) {
 
 function getAccountIdentifier(requestUrl: string) {
   return new URL(requestUrl).searchParams.get("account")?.trim() || null;
+}
+
+function normalizeTwilioDialNumber(value: string | null | undefined) {
+  if (!value?.trim()) {
+    return null;
+  }
+
+  const compact = value.trim().replace(/[()\s-]+/g, "");
+
+  if (compact.startsWith("00")) {
+    const normalized = `+${compact.slice(2)}`;
+    return /^\+[1-9]\d{7,14}$/.test(normalized) ? normalized : null;
+  }
+
+  if (/^\+[1-9]\d{7,14}$/.test(compact)) {
+    return compact;
+  }
+
+  if (/^0\d{9,10}$/.test(compact)) {
+    const normalized = `${UK_DEFAULT_COUNTRY_CODE}${compact.slice(1)}`;
+    return /^\+[1-9]\d{7,14}$/.test(normalized) ? normalized : null;
+  }
+
+  return null;
 }
 
 function normalizeDialStatus(value: string | undefined) {
@@ -171,14 +214,42 @@ async function markIntegrationConnected(accountIdentifier: string | null, timest
   }
 }
 
-async function resolveForwardNumber(accountIdentifier: string | null) {
+async function resolveForwardTarget(accountIdentifier: string | null): Promise<ForwardTargetResolution> {
   if (accountIdentifier) {
+    console.info("[twilio-voice-webhook] Account resolved for inbound voice webhook.", {
+      accountIdentifier
+    });
+
     try {
       const settings = await getMissedCallRecoverySettings(accountIdentifier);
       const callbackNumber = settings.callbackNumber.trim();
 
       if (callbackNumber) {
-        return callbackNumber;
+        const normalizedCallbackNumber = normalizeTwilioDialNumber(callbackNumber);
+
+        if (normalizedCallbackNumber) {
+          console.info("[twilio-voice-webhook] Callback number loaded from missed-call recovery settings.", {
+            accountIdentifier,
+            source: "settings",
+            callbackNumber: normalizedCallbackNumber
+          });
+
+          return {
+            ok: true,
+            number: normalizedCallbackNumber,
+            source: "settings"
+          };
+        }
+
+        console.warn("[twilio-voice-webhook] Saved callback number is invalid for Twilio dialing.", {
+          accountIdentifier,
+          source: "settings",
+          callbackNumber
+        });
+      } else {
+        console.warn("[twilio-voice-webhook] No saved callback number found in missed-call recovery settings.", {
+          accountIdentifier
+        });
       }
     } catch (error) {
       console.warn("[twilio-voice-webhook] Failed to read missed-call recovery settings for forwarding.", {
@@ -186,9 +257,70 @@ async function resolveForwardNumber(accountIdentifier: string | null) {
         message: error instanceof Error ? error.message : "Unknown error"
       });
     }
+  } else {
+    console.warn("[twilio-voice-webhook] No account identifier was provided on the Twilio voice webhook URL.", {
+      reason: "missing_account_identifier"
+    });
   }
 
-  return FALLBACK_FORWARD_NUMBER;
+  if (FALLBACK_FORWARD_NUMBER) {
+    const normalizedFallbackNumber = normalizeTwilioDialNumber(FALLBACK_FORWARD_NUMBER);
+
+    if (normalizedFallbackNumber) {
+      console.info("[twilio-voice-webhook] Callback number loaded from env fallback.", {
+        source: "env",
+        callbackNumber: normalizedFallbackNumber
+      });
+
+      return {
+        ok: true,
+        number: normalizedFallbackNumber,
+        source: "env"
+      };
+    }
+
+    return {
+      ok: false,
+      reason: "invalid_env_fallback",
+      message: "TWILIO_VOICE_FORWARD_NUMBER is present but invalid for Twilio dialing."
+    };
+  }
+
+  if (!accountIdentifier) {
+    return {
+      ok: false,
+      reason: "missing_account_identifier",
+      message:
+        "No account identifier was provided on the Twilio voice webhook URL, and no env fallback forwarding number is configured."
+    };
+  }
+
+  try {
+    const settings = await getMissedCallRecoverySettings(accountIdentifier);
+
+    if (!settings.callbackNumber.trim()) {
+      return {
+        ok: false,
+        reason: "missing_callback_number",
+        message:
+          "No callback number is configured in missed-call recovery settings, and no env fallback forwarding number is configured."
+      };
+    }
+
+    return {
+      ok: false,
+      reason: "invalid_callback_number",
+      message:
+        "The saved callback number is invalid for Twilio dialing, and no env fallback forwarding number is configured."
+    };
+  } catch {
+    return {
+      ok: false,
+      reason: "settings_lookup_failed",
+      message:
+        "The callback number could not be loaded from missed-call recovery settings, and no env fallback forwarding number is configured."
+    };
+  }
 }
 
 async function persistMissedInboundCall(params: URLSearchParams, accountIdentifier: string | null) {
@@ -287,13 +419,26 @@ export async function GET(request: Request) {
     accountIdentifier: accountIdentifier ?? undefined
   });
 
-  const forwardNumber = await resolveForwardNumber(accountIdentifier);
+  const forwardTarget = await resolveForwardTarget(accountIdentifier);
 
-  if (!forwardNumber) {
+  if (!forwardTarget.ok) {
+    console.warn("[twilio-voice-webhook] Fallback TwiML branch used.", {
+      method: "GET",
+      accountIdentifier: accountIdentifier ?? undefined,
+      reason: forwardTarget.reason,
+      message: forwardTarget.message
+    });
     return createXmlResponse(buildFallbackTwiml());
   }
 
-  return createXmlResponse(buildForwardDialTwiml(buildActionUrl(request.url), forwardNumber));
+  console.info("[twilio-voice-webhook] Forwarding branch used.", {
+    method: "GET",
+    accountIdentifier: accountIdentifier ?? undefined,
+    source: forwardTarget.source,
+    forwardNumber: forwardTarget.number
+  });
+
+  return createXmlResponse(buildForwardDialTwiml(buildActionUrl(request.url), forwardTarget.number));
 }
 
 export async function POST(request: Request) {
@@ -333,18 +478,33 @@ export async function POST(request: Request) {
     return createXmlResponse(buildCompletionTwiml());
   }
 
-  const forwardNumber = await resolveForwardNumber(accountIdentifier);
+  const forwardTarget = await resolveForwardTarget(accountIdentifier);
 
-  if (!forwardNumber) {
+  if (!forwardTarget.ok) {
     await recordIntegrationFailure({
       accountIdentifier,
-      message:
-        "No callback number is configured for Twilio forwarding. Save a callback number in Platform Settings to enable live forwarding.",
+      message: forwardTarget.message,
       eventType: "voice_inbound"
+    });
+
+    console.warn("[twilio-voice-webhook] Fallback TwiML branch used.", {
+      method: "POST",
+      accountIdentifier: accountIdentifier ?? undefined,
+      callSid,
+      reason: forwardTarget.reason,
+      message: forwardTarget.message
     });
 
     return createXmlResponse(buildFallbackTwiml());
   }
 
-  return createXmlResponse(buildForwardDialTwiml(buildActionUrl(request.url), forwardNumber));
+  console.info("[twilio-voice-webhook] Forwarding branch used.", {
+    method: "POST",
+    accountIdentifier: accountIdentifier ?? undefined,
+    callSid,
+    source: forwardTarget.source,
+    forwardNumber: forwardTarget.number
+  });
+
+  return createXmlResponse(buildForwardDialTwiml(buildActionUrl(request.url), forwardTarget.number));
 }
