@@ -4,19 +4,30 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { demoMissedCallRecoveryRows } from "@/lib/demo-dashboard-data";
+import { createClient } from "@/lib/supabase/client";
 import { buildMissedCallRecoveryRows, type DashboardCallRow } from "@/lib/dashboard-calls";
 import {
+  assignMissedCallWorkflowOwner,
   formatMissedCallLastAction,
   getMissedCallDuration,
   getMissedCallWorkflowStatus,
+  getOwnerLabelFromAuthUser,
+  isMissedCallAssignedToOwner,
+  isMissedCallUnassigned,
   mergeMissedCallWorkflowRows,
   transitionMissedCallWorkflowRow,
   type MissedCallWorkflowStatus
 } from "@/lib/missed-call-workflow";
 
-type QueueFilter = "All" | "Action Required" | "Follow-Up Sent" | "Resolved";
+type QueueFilter =
+  | "All"
+  | "Action Required"
+  | "Follow-Up Sent"
+  | "Resolved"
+  | "Unassigned"
+  | "Assigned to me";
 
-const filterOptions: QueueFilter[] = ["All", "Action Required", "Follow-Up Sent", "Resolved"];
+const baseFilterOptions: QueueFilter[] = ["All", "Action Required", "Follow-Up Sent", "Resolved"];
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-GB", {
@@ -41,7 +52,7 @@ function getStatusClasses(status: MissedCallWorkflowStatus) {
   }
 }
 
-function matchesFilter(row: DashboardCallRow, filter: QueueFilter) {
+function matchesFilter(row: DashboardCallRow, filter: QueueFilter, currentOwnerLabel: string | null) {
   const status = getMissedCallWorkflowStatus(row);
 
   if (filter === "All") {
@@ -50,6 +61,14 @@ function matchesFilter(row: DashboardCallRow, filter: QueueFilter) {
 
   if (filter === "Action Required") {
     return status === "Action Required" || status === "Escalated";
+  }
+
+  if (filter === "Unassigned") {
+    return isMissedCallUnassigned(row);
+  }
+
+  if (filter === "Assigned to me") {
+    return isMissedCallAssignedToOwner(row, currentOwnerLabel);
   }
 
   return status === filter;
@@ -96,6 +115,7 @@ export function MissedCallRecoveryPage() {
   const [activityTone, setActivityTone] = useState<"success" | "error">("success");
   const [activeFilter, setActiveFilter] = useState<QueueFilter>("All");
   const [sendingCallId, setSendingCallId] = useState<string | null>(null);
+  const [currentOwnerLabel, setCurrentOwnerLabel] = useState<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -145,9 +165,38 @@ export function MissedCallRecoveryPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let isActive = true;
+
+    async function hydrateCurrentUser() {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.auth.getUser();
+
+        if (!isActive) {
+          return;
+        }
+
+        setCurrentOwnerLabel(getOwnerLabelFromAuthUser(data.user));
+      } catch (error) {
+        console.error("[missed-call-recovery] Failed to resolve current owner label.", error);
+      }
+    }
+
+    void hydrateCurrentUser();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const filterOptions: QueueFilter[] = currentOwnerLabel
+    ? [...baseFilterOptions, "Unassigned", "Assigned to me"]
+    : baseFilterOptions;
+
   const filteredRows = useMemo(
-    () => rows.filter((row) => matchesFilter(row, activeFilter)),
-    [rows, activeFilter]
+    () => rows.filter((row) => matchesFilter(row, activeFilter, currentOwnerLabel)),
+    [rows, activeFilter, currentOwnerLabel]
   );
 
   const queueFocusCall = filteredRows.find((row) => row.id === selectedCallId) ?? filteredRows[0] ?? null;
@@ -233,6 +282,25 @@ export function MissedCallRecoveryPage() {
     updateRowStatus(id, "Resolved", "The missed call has been marked as resolved.");
   }
 
+  function handleAssignOwner(id: string, nextOwner: string | null) {
+    setRows((current) =>
+      current.map((row) => {
+        if (row.id !== id) {
+          return row;
+        }
+
+        return assignMissedCallWorkflowOwner(row, nextOwner);
+      })
+    );
+    setSelectedCallId(id);
+    setActivityTone("success");
+    setActivityMessage(
+      nextOwner
+        ? `Ownership assigned to ${nextOwner}.`
+        : "Case returned to the unassigned queue."
+    );
+  }
+
   return (
     <main className="space-y-6 lg:space-y-7">
       <WorkspacePageHeader
@@ -301,6 +369,26 @@ export function MissedCallRecoveryPage() {
               <span className="type-body-text">Assigned owner: {queueFocusCall.assignedOwner}</span>
               <span className="type-body-text">Last action: {formatMissedCallLastAction(queueFocusCall)}</span>
             </div>
+            {currentOwnerLabel ? (
+              <div className="mt-4 flex flex-wrap gap-2.5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleAssignOwner(
+                      queueFocusCall.id,
+                      isMissedCallAssignedToOwner(queueFocusCall, currentOwnerLabel)
+                        ? null
+                        : currentOwnerLabel
+                    )
+                  }
+                  className="button-secondary-ui inline-flex min-h-[38px] items-center justify-center px-3.5 text-[13px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                >
+                  {isMissedCallAssignedToOwner(queueFocusCall, currentOwnerLabel)
+                    ? "Mark Unassigned"
+                    : "Assign to Me"}
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid gap-3.5 px-5 py-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">

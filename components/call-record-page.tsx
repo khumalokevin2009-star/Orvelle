@@ -6,11 +6,15 @@ import { useEffect, useState, type ReactNode } from "react";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
 import type { CallRecordDetail, TranscriptEntry } from "@/lib/call-detail";
+import { createClient } from "@/lib/supabase/client";
 import {
+  assignMissedCallWorkflowOwner,
   addMissedCallWorkflowNote,
   buildMissedCallHistory,
   formatMissedCallLastAction,
   getMissedCallWorkflowStatus,
+  getOwnerLabelFromAuthUser,
+  isMissedCallAssignedToOwner,
   isMissedCallRecoveryRecord,
   mergeMissedCallWorkflowRow,
   transitionMissedCallWorkflowRow
@@ -198,6 +202,7 @@ export function CallRecordPage({
   const [isGeneratingAnalysis, setIsGeneratingAnalysis] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isSendingFollowUp, setIsSendingFollowUp] = useState(false);
+  const [currentOwnerLabel, setCurrentOwnerLabel] = useState<string | null>(null);
   const analysisSummary = detailState.analysisSummary ?? defaultAnalysisSummary;
   const operationalOutcome = row.callOutcome ?? analysisSummary.callOutcome;
   const isMissedCallRecovery = isMissedCallRecoveryRecord(row);
@@ -215,6 +220,31 @@ export function CallRecordPage({
   useEffect(() => {
     setRow(mergeMissedCallWorkflowRow(initialRow));
   }, [initialRow]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function hydrateCurrentUser() {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase.auth.getUser();
+
+        if (!isActive) {
+          return;
+        }
+
+        setCurrentOwnerLabel(getOwnerLabelFromAuthUser(data.user));
+      } catch (error) {
+        console.error("[call-record] Failed to resolve current owner label.", error);
+      }
+    }
+
+    void hydrateCurrentUser();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   function pushNote(note: string) {
     setRow((currentRow) => ({
@@ -359,6 +389,24 @@ export function CallRecordPage({
     }
     setNoticeTone("success");
     setNotice("Operational note recorded.");
+  }
+
+  function handleToggleOwnership() {
+    if (!isMissedCallRecovery || !currentOwnerLabel) {
+      return;
+    }
+
+    const nextOwner = isMissedCallAssignedToOwner(row, currentOwnerLabel)
+      ? null
+      : currentOwnerLabel;
+
+    setRow(assignMissedCallWorkflowOwner(row, nextOwner));
+    setNoticeTone("success");
+    setNotice(
+      nextOwner
+        ? `Ownership assigned to ${nextOwner}.`
+        : "Case returned to the unassigned queue."
+    );
   }
 
   async function handleGenerateTranscript() {
@@ -854,6 +902,15 @@ export function CallRecordPage({
               >
                 Escalate
               </button>
+              {isMissedCallRecovery && currentOwnerLabel ? (
+                <button
+                  type="button"
+                  onClick={handleToggleOwnership}
+                  className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                >
+                  {isMissedCallAssignedToOwner(row, currentOwnerLabel) ? "Mark Unassigned" : "Assign to Me"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={handleAddNote}

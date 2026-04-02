@@ -34,6 +34,14 @@ type MissedCallWorkflowOverride = Pick<
 const STORAGE_KEY = "orvelle.missed-call-workflow";
 const AUDIT_PREFIX = "__AUDIT__";
 
+function toTitleCase(value: string) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
 function formatDisplayTimestamp(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     month: "long",
@@ -213,6 +221,46 @@ export function buildMissedCallHistory(row: DashboardCallRow): MissedCallHistory
   );
 }
 
+export function getOwnerLabelFromAuthUser(
+  user:
+    | {
+        email?: string | null;
+        user_metadata?: Record<string, unknown> | null;
+      }
+    | null
+    | undefined
+) {
+  const fullName = user?.user_metadata?.full_name;
+  if (typeof fullName === "string" && fullName.trim()) {
+    return fullName.trim();
+  }
+
+  const name = user?.user_metadata?.name;
+  if (typeof name === "string" && name.trim()) {
+    return name.trim();
+  }
+
+  const email = user?.email?.trim();
+  if (!email) {
+    return null;
+  }
+
+  const localPart = email.split("@")[0]?.replace(/[._-]+/g, " ").trim();
+  return localPart ? toTitleCase(localPart) : null;
+}
+
+export function isMissedCallAssignedToOwner(row: DashboardCallRow, ownerLabel: string | null) {
+  if (!ownerLabel?.trim()) {
+    return false;
+  }
+
+  return row.assignedOwner.trim().toLowerCase() === ownerLabel.trim().toLowerCase();
+}
+
+export function isMissedCallUnassigned(row: DashboardCallRow) {
+  return row.assignedOwner.trim().toLowerCase() === "unassigned";
+}
+
 export function getMissedCallWorkflowStatus(row: DashboardCallRow): MissedCallWorkflowStatus {
   if (row.workflowStatusLabel) {
     return row.workflowStatusLabel;
@@ -280,6 +328,26 @@ export function addMissedCallWorkflowNote(row: DashboardCallRow, note: string) {
     notes: createNoteList(
       baseRow,
       createAuditEntry("note_added", note.trim())
+    )
+  });
+}
+
+export function assignMissedCallWorkflowOwner(row: DashboardCallRow, ownerLabel: string | null) {
+  const baseRow = mergeMissedCallWorkflowRow(row);
+  const lastActionAt = new Date().toISOString();
+  const nextOwner = ownerLabel?.trim() || "Unassigned";
+  const detail =
+    nextOwner === "Unassigned"
+      ? "Case returned to the unassigned recovery queue."
+      : `Ownership assigned to ${nextOwner}.`;
+
+  return persistMissedCallWorkflowRow({
+    ...baseRow,
+    assignedOwner: nextOwner,
+    updatedAtRaw: lastActionAt,
+    notes: createNoteList(
+      baseRow,
+      createAuditEntry("note_added", detail, lastActionAt)
     )
   });
 }
