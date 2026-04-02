@@ -104,7 +104,7 @@ export async function getTwilioIntegrationSnapshot({
       : resolvedStatus === "error"
         ? lastErrorMessage ??
           "The Twilio integration needs attention before it can receive live call events reliably."
-        : "Twilio is configured, but Orvelle is still waiting for the first valid webhook event.";
+        : "Twilio is configured, but Orvelle is still waiting for the first valid webhook event. Make sure Twilio is using the exact webhook URL below, including the account query parameter.";
 
   return {
     accountIdentifier,
@@ -117,7 +117,8 @@ export async function getTwilioIntegrationSnapshot({
     lastErrorMessage,
     monitoring,
     instructions: [
-      "Set your Twilio Voice status callback and recording status callback to the webhook URL below exactly as shown, including the account query parameter.",
+      "Set your Twilio voice webhook or status callback URL to the webhook URL below exactly as shown, including the account query parameter.",
+      "If Twilio is pointed at /api/webhooks/twilio without the account query parameter, Orvelle can answer the call but cannot mark your integration as connected.",
       "Use POST with application/x-www-form-urlencoded so completed call and recording events can be validated safely.",
       "Keep the account identifier available for internal mapping and support coordination during rollout."
     ]
