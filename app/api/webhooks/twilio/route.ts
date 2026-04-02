@@ -3,9 +3,9 @@ export const runtime = "nodejs";
 import { recordMonitoringEvent } from "@/lib/integrations/monitoring";
 import { updateProviderConnectionState } from "@/lib/integrations/connection-status";
 
+const VERIFIED_FORWARD_NUMBER = "+447392752193";
 const TWIML_RESPONSE = `<Response>
-  <Say>Call connected</Say>
-  <Hangup />
+  <Dial>${VERIFIED_FORWARD_NUMBER}</Dial>
 </Response>`;
 
 function createTwimlResponse() {
@@ -118,6 +118,13 @@ export async function POST(request: Request) {
       to: fields.to
     });
   }
+
+  console.info("Twilio webhook returning dial TwiML", {
+    timestamp,
+    accountIdentifier,
+    callSid: fields.callSid,
+    dialTo: VERIFIED_FORWARD_NUMBER
+  });
 
   return createTwimlResponse();
 }
