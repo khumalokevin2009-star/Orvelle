@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-const VERIFIED_FORWARD_NUMBER = "+447392752193";
+const VERIFIED_FORWARD_NUMBER = "+447900261143";
 const TWIML_RESPONSE = `<Response>
   <Dial>${VERIFIED_FORWARD_NUMBER}</Dial>
 </Response>`;
