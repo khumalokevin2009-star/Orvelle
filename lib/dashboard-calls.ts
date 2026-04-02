@@ -45,6 +45,7 @@ export type DashboardCallRow = CallTableRow & {
   direction: string;
   recordingFilename: string | null;
   sourceSystem: string | null;
+  workflowStatusLabel?: "Action Required" | "Follow-Up Sent" | "Escalated" | "Resolved";
 };
 
 export type SupabaseAnalysisRecord = {

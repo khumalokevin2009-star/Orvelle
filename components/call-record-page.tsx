@@ -180,6 +180,12 @@ export function CallRecordPage({
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const analysisSummary = detailState.analysisSummary ?? defaultAnalysisSummary;
   const operationalOutcome = row.callOutcome ?? analysisSummary.callOutcome;
+  const isMissedCallRecoveryRecord = row.id.startsWith("missed-call-");
+  const backHref = isMissedCallRecoveryRecord ? "/missed-calls" : "/dashboard";
+  const backLabel = isMissedCallRecoveryRecord ? "Back to Missed Calls" : "Back to Dashboard";
+  const primaryStatusValue = isMissedCallRecoveryRecord
+    ? row.workflowStatusLabel ?? row.status
+    : operationalOutcome;
   const issueIdentified =
     analysisSummary.primaryIssue !== "Pending classification"
       ? analysisSummary.primaryIssue
@@ -203,6 +209,7 @@ export function CallRecordPage({
       issue: "Recovered revenue opportunity",
       reason: "Remediation workflow completed",
       status: "Resolved",
+      workflowStatusLabel: "Resolved",
       statusTone: "recovered",
       urgency: "Closed",
       urgencyTone: "recovered",
@@ -216,7 +223,7 @@ export function CallRecordPage({
     setNotice("Interaction marked as resolved.");
   }
 
-  function handleScheduleFollowUp() {
+  function handleSendFollowUp() {
     if (row.status === "Resolved") {
       setNotice("Resolved interaction records do not require additional follow-up scheduling.");
       return;
@@ -225,15 +232,40 @@ export function CallRecordPage({
     setRow((currentRow) => ({
       ...currentRow,
       status: currentRow.status === "Escalated" ? "Escalated" : "Under Review",
+      workflowStatusLabel: "Follow-Up Sent",
       statusTone: currentRow.status === "Escalated" ? "critical" : "pending",
       dueBy: "Within 2 Hours",
       recommendedAction:
         "Immediate outbound follow-up required. Lead exhibited high purchase intent and should be contacted within the active recovery window. Document call outcome and booking disposition upon completion.",
-      notes: currentRow.notes.includes("Follow-up scheduling placeholder created from the call detail page.")
+      notes: currentRow.notes.includes("Follow-up sent from the call detail page.")
         ? currentRow.notes
-        : ["Follow-up scheduling placeholder created from the call detail page.", ...currentRow.notes]
+        : ["Follow-up sent from the call detail page.", ...currentRow.notes]
     }));
-    setNotice("Follow-up scheduling placeholder created.");
+    setNotice("Follow-up sent and recovery workflow updated.");
+  }
+
+  function handleEscalate() {
+    if (row.status === "Resolved") {
+      setNotice("Resolved interaction records cannot be escalated.");
+      return;
+    }
+
+    setRow((currentRow) => ({
+      ...currentRow,
+      status: "Escalated",
+      workflowStatusLabel: "Escalated",
+      statusTone: "critical",
+      urgency: "Critical Priority",
+      urgencyTone: "critical",
+      dueBy: "Immediate escalation",
+      nextStep: "Escalate to manager and call back",
+      recommendedAction:
+        "Escalate the case to senior operations ownership immediately, then complete an outbound recovery call while purchase intent remains active.",
+      notes: currentRow.notes.includes("Case escalated from the call detail page.")
+        ? currentRow.notes
+        : ["Case escalated from the call detail page.", ...currentRow.notes]
+    }));
+    setNotice("Case escalated for immediate recovery handling.");
   }
 
   function handleAddNote() {
@@ -356,14 +388,18 @@ export function CallRecordPage({
       ) : null}
 
       <WorkspacePageHeader
-        title="Call Analysis Record"
-        description="Detailed inspection of a flagged interaction, associated conversion failure indicators, and required revenue recovery actions."
+        title={isMissedCallRecoveryRecord ? "Missed Call Recovery Record" : "Call Analysis Record"}
+        description={
+          isMissedCallRecoveryRecord
+            ? "Detailed review of a missed inbound call, the revenue risk attached to it, and the next operational recovery step."
+            : "Detailed inspection of a flagged interaction, associated conversion failure indicators, and required revenue recovery actions."
+        }
         actions={
           <Link
-            href="/dashboard"
+            href={backHref}
             className="button-secondary-ui inline-flex items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
           >
-            Back to Dashboard
+            {backLabel}
           </Link>
         }
       />
@@ -380,7 +416,7 @@ export function CallRecordPage({
                   row.statusTone
                 )}`}
               >
-                {row.status}
+                {isMissedCallRecoveryRecord ? primaryStatusValue : row.status}
               </span>
             </div>
 
@@ -389,23 +425,37 @@ export function CallRecordPage({
                 <h2 className="type-page-title text-[32px] leading-[1.02] sm:text-[36px]">{row.caller}</h2>
                 <p className="type-body-text mt-3 max-w-[820px] text-[15px] leading-7">{row.summary}</p>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <SummaryField label="Outcome" value={operationalOutcome} detail={row.status} />
+                <div
+                  className={`mt-5 grid gap-3 sm:grid-cols-2 ${
+                    isMissedCallRecoveryRecord ? "xl:grid-cols-3" : "xl:grid-cols-4"
+                  }`}
+                >
                   <SummaryField
-                    label="Estimated Revenue"
+                    label={isMissedCallRecoveryRecord ? "Follow-Up Status" : "Outcome"}
+                    value={primaryStatusValue}
+                    detail={isMissedCallRecoveryRecord ? operationalOutcome : row.status}
+                  />
+                  <SummaryField
+                    label={isMissedCallRecoveryRecord ? "Revenue Risk" : "Estimated Revenue"}
                     value={row.revenue}
-                    detail="Projected recovery value"
+                    detail={isMissedCallRecoveryRecord ? "Estimated revenue at risk" : "Projected recovery value"}
                   />
                   <SummaryField
                     label="Issue Identified"
                     value={issueIdentified}
                     detail={row.reason}
                   />
+                  {isMissedCallRecoveryRecord ? (
+                    <SummaryField label="Phone Number" value={row.phone} detail={row.sourceSystem ?? "Inbound call"} />
+                  ) : null}
                   <SummaryField
                     label="Timestamp"
                     value={row.date}
-                    detail={`${row.phone} • ${detailState.duration}`}
+                    detail={isMissedCallRecoveryRecord ? "Inbound call received" : `${row.phone} • ${detailState.duration}`}
                   />
+                  {isMissedCallRecoveryRecord ? (
+                    <SummaryField label="Call Duration" value={detailState.duration} detail="Recorded interaction length" />
+                  ) : null}
                 </div>
               </div>
 
@@ -427,11 +477,19 @@ export function CallRecordPage({
                   </button>
                   <button
                     type="button"
-                    onClick={handleScheduleFollowUp}
+                    onClick={handleSendFollowUp}
                     disabled={row.status === "Resolved"}
                     className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
                   >
-                    Schedule Follow-Up
+                    Send Follow-Up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleEscalate}
+                    disabled={row.status === "Resolved"}
+                    className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
+                  >
+                    Escalate
                   </button>
                 </div>
               </div>
@@ -597,8 +655,12 @@ export function CallRecordPage({
           </CardSection>
 
           <CardSection
-            title="Analyst Notes"
-            description="Audit trail and operational annotations associated with the interaction."
+            title={isMissedCallRecoveryRecord ? "Notes & Timeline" : "Analyst Notes"}
+            description={
+              isMissedCallRecoveryRecord
+                ? "Operational notes, follow-up history, and recovery timeline for this missed call."
+                : "Audit trail and operational annotations associated with the interaction."
+            }
           >
             <div className="space-y-3">
               {row.notes.map((note, index) => (
@@ -653,11 +715,11 @@ export function CallRecordPage({
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={handleScheduleFollowUp}
+                onClick={handleSendFollowUp}
                 disabled={row.status === "Resolved"}
                 className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
                 >
-                Schedule Follow-Up
+                Send Follow-Up
               </button>
               <button
                 type="button"
@@ -666,6 +728,14 @@ export function CallRecordPage({
                 className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
               >
                 Mark as Resolved
+              </button>
+              <button
+                type="button"
+                onClick={handleEscalate}
+                disabled={row.status === "Resolved"}
+                className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
+              >
+                Escalate
               </button>
               <button
                 type="button"
