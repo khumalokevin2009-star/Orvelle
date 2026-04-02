@@ -22,6 +22,8 @@ export type ParsedWebhookResult = {
     duration?: number;
     hasRecording?: boolean;
     toNumber?: string;
+    shouldProcess?: boolean;
+    responseType?: "json" | "twiml";
   };
 };
 

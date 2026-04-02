@@ -7,6 +7,7 @@ export type TwilioCallPayload = {
   To?: string;
   Timestamp?: string;
   StartTime?: string;
+  DateCreated?: string;
   CallDuration?: string | number;
   RecordingUrl?: string;
   RecordingSid?: string;
@@ -14,9 +15,10 @@ export type TwilioCallPayload = {
   RecordingDuration?: string | number;
   CallStatus?: string;
   AnsweredBy?: string;
+  Direction?: string;
 };
 
-export type TwilioWebhookEventType = "call_completed" | "recording_completed";
+export type TwilioWebhookEventType = "voice_inbound" | "call_completed" | "recording_completed";
 
 export type TwilioWebhookValidationResult =
   | { ok: true }
@@ -37,10 +39,19 @@ function parseDurationSeconds(duration: TwilioCallPayload["CallDuration"]) {
   return 0;
 }
 
-function getTimestamp(payload: TwilioCallPayload) {
-  const candidate = payload.StartTime ?? payload.Timestamp;
+function getTimestamp(
+  payload: TwilioCallPayload,
+  options: {
+    fallbackToNow?: boolean;
+  } = {}
+) {
+  const candidate = payload.StartTime ?? payload.Timestamp ?? payload.DateCreated;
 
   if (!candidate) {
+    if (options.fallbackToNow) {
+      return new Date().toISOString();
+    }
+
     throw new Error("Twilio payload is missing a timestamp.");
   }
 
@@ -65,7 +76,11 @@ export function getTwilioWebhookEventType(payload: TwilioCallPayload): TwilioWeb
     return "call_completed";
   }
 
-  throw new Error("Unsupported Twilio webhook event. Expected a call or recording completion event.");
+  if (payload.CallSid?.trim()) {
+    return "voice_inbound";
+  }
+
+  throw new Error("Unsupported Twilio webhook event. Expected an inbound voice, call completion, or recording completion event.");
 }
 
 function getAnsweredFlag(payload: TwilioCallPayload) {
@@ -78,14 +93,21 @@ function getAnsweredFlag(payload: TwilioCallPayload) {
   return Boolean(payload.AnsweredBy) || parseDurationSeconds(payload.CallDuration) > 0;
 }
 
-export function mapTwilioPayload(payload: TwilioCallPayload): CallProviderPayload {
+export function mapTwilioPayload(
+  payload: TwilioCallPayload,
+  options: {
+    fallbackTimestampToNow?: boolean;
+  } = {}
+): CallProviderPayload {
   if (!payload.CallSid?.trim()) {
     throw new Error("Twilio payload is missing CallSid.");
   }
 
   return {
     phone_number: payload.From?.trim() || "Unknown number",
-    timestamp: getTimestamp(payload),
+    timestamp: getTimestamp(payload, {
+      fallbackToNow: options.fallbackTimestampToNow
+    }),
     duration: parseDurationSeconds(payload.CallDuration),
     answered: getAnsweredFlag(payload),
     recording_url: payload.RecordingUrl?.trim() || undefined,
@@ -149,6 +171,21 @@ export function createTwilioWebhookSignature({
 }) {
   const payload = buildTwilioSignaturePayload(url, params);
   return createHmac("sha1", authToken).update(payload, "utf8").digest("base64");
+}
+
+function escapeTwimlText(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+export function buildTwilioVoiceResponse(message = "Thank you. Your call has been received. Goodbye.") {
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Say>${escapeTwimlText(
+    message
+  )}</Say><Hangup/></Response>`;
 }
 
 export function validateTwilioWebhookSignature({

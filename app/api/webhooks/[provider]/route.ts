@@ -10,6 +10,7 @@ import {
   logWebhookWarning
 } from "@/lib/webhooks/logger";
 import { getWebhookProviderHandler } from "@/lib/webhooks/provider-registry";
+import { buildTwilioVoiceResponse } from "@/providers/twilio";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,16 @@ function buildRequestMetadata(request: Request, provider: string) {
     path: new URL(request.url).pathname,
     contentType: request.headers.get("content-type")
   };
+}
+
+function buildTwimlResponse(message?: string) {
+  return new Response(buildTwilioVoiceResponse(message), {
+    status: 200,
+    headers: {
+      "content-type": "text/xml; charset=utf-8",
+      "cache-control": "no-store"
+    }
+  });
 }
 
 async function persistIntegrationFailure({
@@ -147,6 +158,11 @@ export async function POST(
 
   let rawBody = "";
 
+  logWebhookSuccess("Webhook request received.", {
+    ...requestMetadata,
+    accountIdentifier: accountIdentifier ?? undefined
+  });
+
   try {
     rawBody = await request.text();
   } catch {
@@ -185,6 +201,11 @@ export async function POST(
       { status: validation.status }
     );
   }
+
+  logWebhookSuccess("Webhook validation succeeded.", {
+    ...requestMetadata,
+    accountIdentifier: accountIdentifier ?? undefined
+  });
 
   let parsedWebhook;
 
@@ -240,6 +261,20 @@ export async function POST(
       reason: "admin_client_failure",
       message
     });
+
+    if (parsedWebhook.metadata.responseType === "twiml") {
+      logWebhookWarning("Twilio voice webhook returned safe TwiML after an admin client initialization failure.", {
+        ...requestMetadata,
+        accountIdentifier: accountIdentifier ?? undefined,
+        externalCallId: parsedWebhook.payload.external_call_id,
+        eventType: parsedWebhook.metadata.eventType,
+        message,
+        reason: "twiml_fallback_after_admin_failure",
+        status: 200
+      });
+
+      return buildTwimlResponse("Thank you. Your call was received. Goodbye.");
+    }
 
     return NextResponse.json(
       {
@@ -365,7 +400,11 @@ export async function POST(
       }
     }
 
-    if (ingestionResult.body.callId && !ingestionResult.body.duplicate) {
+    if (
+      ingestionResult.body.callId &&
+      !ingestionResult.body.duplicate &&
+      ingestionResult.metadata.shouldProcess !== false
+    ) {
       const scheduledCallId = ingestionResult.body.callId;
 
       after(async () => {
@@ -379,6 +418,19 @@ export async function POST(
             : undefined
         });
       });
+    }
+
+    if (ingestionResult.metadata.responseType === "twiml") {
+      logWebhookSuccess("Twilio voice TwiML response returned.", {
+        ...requestMetadata,
+        accountIdentifier: accountIdentifier ?? undefined,
+        externalCallId: normalizedPayload.external_call_id,
+        eventType: ingestionResult.metadata.eventType,
+        callId: (ingestionResult.body.callId as string | undefined) ?? undefined,
+        status: 200
+      });
+
+      return buildTwimlResponse();
     }
 
     return NextResponse.json(ingestionResult.body, { status: ingestionResult.status });
@@ -408,6 +460,20 @@ export async function POST(
       reason: "ingestion_failure",
       message
     });
+
+    if (parsedWebhook.metadata.responseType === "twiml") {
+      logWebhookWarning("Twilio voice webhook fell back to a safe TwiML response after an ingestion failure.", {
+        ...requestMetadata,
+        accountIdentifier: accountIdentifier ?? undefined,
+        externalCallId: normalizedPayload.external_call_id,
+        eventType: parsedWebhook.metadata.eventType,
+        message,
+        reason: "twiml_fallback_after_ingestion_failure",
+        status: 200
+      });
+
+      return buildTwimlResponse("Thank you. Your call was received. Goodbye.");
+    }
 
     return NextResponse.json(
       {

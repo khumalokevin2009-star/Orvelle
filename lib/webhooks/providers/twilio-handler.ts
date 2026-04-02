@@ -30,6 +30,8 @@ type IngestionResult = {
     duration?: number;
     hasRecording?: boolean;
     toNumber?: string;
+    shouldProcess?: boolean;
+    responseType?: "json" | "twiml";
   };
 };
 
@@ -53,7 +55,7 @@ function getRecordingFileName(recordingUrl?: string) {
 async function findExistingCall(supabase: SupabaseAdminClient, externalCallId: string) {
   const { data, error } = await supabase
     .from("calls")
-    .select("id, audio_url, recording_filename, started_at, ended_at, caller_phone")
+    .select("id, audio_url, recording_filename, started_at, ended_at, caller_phone, source_system, status")
     .eq("external_id", externalCallId)
     .maybeSingle();
 
@@ -69,6 +71,8 @@ async function findExistingCall(supabase: SupabaseAdminClient, externalCallId: s
         started_at: string | null;
         ended_at: string | null;
         caller_phone: string | null;
+        source_system: string | null;
+        status: string | null;
       }
     | null;
 }
@@ -90,7 +94,7 @@ async function insertTwilioCall(
   return ingestedCall.callId;
 }
 
-async function handleCallCompleted(
+async function handleInboundVoiceRequest(
   supabase: SupabaseAdminClient,
   parsedWebhook: ParsedTwilioWebhookResult
 ): Promise<IngestionResult> {
@@ -100,7 +104,7 @@ async function handleCallCompleted(
     return {
       status: 200,
       body: {
-        message: "Webhook call already ingested.",
+        message: "Inbound voice webhook acknowledged.",
         duplicate: true,
         callId: existingCall.id
       },
@@ -113,8 +117,77 @@ async function handleCallCompleted(
   return {
     status: 201,
     body: {
-      message: "Webhook ingested successfully.",
+      message: "Inbound voice webhook stored successfully.",
       callId
+    },
+    metadata: parsedWebhook.metadata
+  };
+}
+
+async function handleCallCompleted(
+  supabase: SupabaseAdminClient,
+  parsedWebhook: ParsedTwilioWebhookResult
+): Promise<IngestionResult> {
+  const existingCall = await findExistingCall(supabase, parsedWebhook.payload.external_call_id);
+
+  if (!existingCall?.id) {
+    const callId = await insertTwilioCall(supabase, parsedWebhook);
+
+    return {
+      status: 201,
+      body: {
+        message: "Webhook ingested successfully.",
+        callId
+      },
+      metadata: parsedWebhook.metadata
+    };
+  }
+
+  const startedAt = existingCall.started_at ?? parsedWebhook.payload.timestamp;
+  const durationSeconds = Math.max(0, Math.round(parsedWebhook.payload.duration));
+  const endedAt =
+    durationSeconds > 0 ? new Date(new Date(startedAt).getTime() + durationSeconds * 1000).toISOString() : null;
+  const nextStatus = parsedWebhook.payload.answered ? "under_review" : "action_required";
+  const alreadyUpdated =
+    existingCall.caller_phone === parsedWebhook.payload.phone_number &&
+    existingCall.started_at === startedAt &&
+    existingCall.ended_at === endedAt &&
+    existingCall.source_system === parsedWebhook.payload.provider &&
+    existingCall.status === nextStatus;
+
+  if (alreadyUpdated) {
+    return {
+      status: 200,
+      body: {
+        message: "Completed call event already applied.",
+        duplicate: true,
+        callId: existingCall.id
+      },
+      metadata: parsedWebhook.metadata
+    };
+  }
+
+  const { error } = await supabase
+    .from("calls")
+    .update({
+      caller_phone: parsedWebhook.payload.phone_number,
+      started_at: startedAt,
+      ended_at: endedAt,
+      source_system: parsedWebhook.payload.provider,
+      status: nextStatus
+    })
+    .eq("id", existingCall.id);
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    status: 200,
+    body: {
+      message: "Completed call metadata updated successfully.",
+      callId: existingCall.id,
+      updated: true
     },
     metadata: parsedWebhook.metadata
   };
@@ -256,7 +329,9 @@ export const twilioWebhookHandler = {
 
     const { parsedPayload } = parseTwilioWebhookBody(rawBody);
     const eventType = getTwilioWebhookEventType(parsedPayload);
-    const payload = mapTwilioPayload(parsedPayload);
+    const payload = mapTwilioPayload(parsedPayload, {
+      fallbackTimestampToNow: eventType === "voice_inbound"
+    });
 
     return {
       rawPayload: parsedPayload,
@@ -269,7 +344,9 @@ export const twilioWebhookHandler = {
         answered: payload.answered,
         duration: getTwilioCallDuration(parsedPayload),
         hasRecording: Boolean(payload.recording_url),
-        toNumber: parsedPayload.To?.trim() || undefined
+        toNumber: parsedPayload.To?.trim() || undefined,
+        shouldProcess: eventType !== "voice_inbound",
+        responseType: eventType === "voice_inbound" ? "twiml" : "json"
       }
     };
   },
@@ -280,6 +357,10 @@ export const twilioWebhookHandler = {
     supabase: SupabaseAdminClient;
     parsedWebhook: ParsedTwilioWebhookResult;
   }): Promise<IngestionResult> {
+    if (parsedWebhook.metadata.eventType === "voice_inbound") {
+      return handleInboundVoiceRequest(supabase, parsedWebhook);
+    }
+
     if (parsedWebhook.metadata.eventType === "recording_completed") {
       return handleRecordingCompleted(supabase, parsedWebhook);
     }
