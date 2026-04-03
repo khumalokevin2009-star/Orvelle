@@ -14,17 +14,28 @@ import {
 import { OrvelleBrandIcon } from "@/components/orvelle-brand";
 import { SolutionModeProvider } from "@/components/solution-mode-provider";
 import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
-import { defaultSolutionMode, type SolutionMode } from "@/lib/solution-mode";
+import {
+  defaultBusinessVertical,
+  defaultSolutionMode,
+  type BusinessVertical,
+  type SolutionMode
+} from "@/lib/solution-mode";
 import { createClient } from "@/lib/supabase/client";
 
 type DashboardShellProps = {
   children: ReactNode;
+  businessId?: string;
+  businessName?: string;
   solutionMode?: SolutionMode;
+  businessVertical?: BusinessVertical;
 };
 
 export function DashboardShell({
   children,
-  solutionMode = defaultSolutionMode
+  businessId = "",
+  businessName = "Business Account",
+  solutionMode = defaultSolutionMode,
+  businessVertical = defaultBusinessVertical
 }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -164,7 +175,14 @@ export function DashboardShell({
         </aside>
 
         <div className="min-w-0 flex-1 px-4 py-5 pb-24 sm:px-6 sm:py-7 sm:pb-24 lg:px-8 lg:py-8 lg:pb-8 xl:px-12 xl:py-9">
-          <SolutionModeProvider solutionMode={solutionMode}>{children}</SolutionModeProvider>
+          <SolutionModeProvider
+            businessId={businessId}
+            businessName={businessName}
+            solutionMode={solutionMode}
+            businessVertical={businessVertical}
+          >
+            {children}
+          </SolutionModeProvider>
         </div>
       </div>
 

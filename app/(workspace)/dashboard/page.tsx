@@ -17,8 +17,9 @@ import {
   type DashboardCallRow
 } from "@/lib/dashboard-calls";
 import { demoMissedCallRecoveryRows, demoTrendByRange } from "@/lib/demo-dashboard-data";
-import { useSolutionMode } from "@/components/solution-mode-provider";
+import { useCurrentBusinessAccount } from "@/components/solution-mode-provider";
 import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
+import type { BusinessVertical } from "@/lib/solution-mode";
 
 type PrimaryMetricItem = {
   label: string;
@@ -51,6 +52,13 @@ function formatCurrency(value: number) {
     currency: "GBP",
     maximumFractionDigits: 0
   }).format(value);
+}
+
+function getBusinessVerticalLabel(businessVertical: BusinessVertical) {
+  return businessVertical
+    .split("_")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
 }
 
 function getRowActionStatus(row: CallTableRow) {
@@ -455,10 +463,14 @@ export default function HomePage() {
   const [dataState, setDataState] = useState<"loading" | "ready" | "error">("loading");
   const [dataError, setDataError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const solutionMode = useSolutionMode();
+  const currentBusinessAccount = useCurrentBusinessAccount();
+  const solutionMode = currentBusinessAccount.solutionMode;
 
   const isServiceBusinessMode = solutionMode === "service_business_missed_call_recovery";
   const copy = getSolutionModeCopy(solutionMode);
+  const businessDescriptor = `${currentBusinessAccount.businessName} · ${getBusinessVerticalLabel(
+    currentBusinessAccount.businessVertical
+  )}`;
 
   const rowsInSelectedRange = useMemo(
     () => rowsState.filter((row) => isWithinDateRange(row.startedAtRaw, selectedRange)),
@@ -1053,8 +1065,8 @@ export default function HomePage() {
           }
           description={
             isServiceBusinessMode
-              ? "Operational view of missed inbound calls, follow-up activity, jobs at risk, and unresolved recovery cases that still need action."
-              : "Performance view of conversion failures, revenue exposure, follow-up delays, and the calls that need coaching or recovery attention first."
+              ? `Operational view for ${businessDescriptor}, covering missed inbound calls, follow-up activity, jobs at risk, and unresolved recovery cases that still need action.`
+              : `Performance view for ${businessDescriptor}, covering conversion failures, revenue exposure, follow-up delays, and the calls that need coaching or recovery attention first.`
           }
           selectedRange={selectedRange}
           summaryItems={summaryItems}

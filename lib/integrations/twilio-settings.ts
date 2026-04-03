@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { User } from "@supabase/supabase-js";
+import { ensureBusinessAccountForUser } from "@/lib/business-account";
 import {
   ensureProviderConnectionState,
   readProviderConnectionState,
@@ -51,7 +52,8 @@ export async function getTwilioIntegrationSnapshot({
   user: User;
   origin: string;
 }): Promise<TwilioIntegrationSnapshot> {
-  const accountIdentifier = user.id;
+  const businessAccount = await ensureBusinessAccountForUser(user);
+  const accountIdentifier = businessAccount.businessId;
   const endpointReady = Boolean(
     process.env.TWILIO_AUTH_TOKEN &&
       process.env.NEXT_PUBLIC_SUPABASE_URL &&

@@ -1,28 +1,26 @@
 import { redirect } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { getAuthenticatedUser } from "@/lib/auth/session";
-import { defaultSolutionMode } from "@/lib/solution-mode";
-import { getMissedCallRecoverySettings } from "@/lib/missed-call-recovery-settings";
+import { getCurrentBusinessAccount } from "@/lib/business-account";
 
 export default async function WorkspaceLayout({
   children
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getAuthenticatedUser();
+  const businessAccount = await getCurrentBusinessAccount();
 
-  if (!user) {
+  if (!businessAccount) {
     redirect("/login");
   }
 
-  let solutionMode = defaultSolutionMode;
-
-  try {
-    const settings = await getMissedCallRecoverySettings(user.id);
-    solutionMode = settings.solutionMode;
-  } catch (error) {
-    console.error("[workspace-layout] Failed to load solution mode.", error);
-  }
-
-  return <DashboardShell solutionMode={solutionMode}>{children}</DashboardShell>;
+  return (
+    <DashboardShell
+      businessId={businessAccount.businessId}
+      businessName={businessAccount.businessName}
+      solutionMode={businessAccount.solutionMode}
+      businessVertical={businessAccount.businessVertical}
+    >
+      {children}
+    </DashboardShell>
+  );
 }

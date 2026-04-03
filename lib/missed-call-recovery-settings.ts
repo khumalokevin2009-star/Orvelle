@@ -8,6 +8,7 @@ import {
   type BusinessVertical,
   type SolutionMode
 } from "@/lib/solution-mode";
+import { mergeBusinessAccountMetadata, readBusinessAccountFromUser } from "@/lib/business-account";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type MissedCallRecoverySettings = {
@@ -22,7 +23,7 @@ export type MissedCallRecoverySettings = {
   updatedAt: string | null;
 };
 
-type MissedCallRecoverySettingsRecord = Omit<MissedCallRecoverySettings, "updatedAt"> & {
+type MissedCallRecoverySettingsRecord = Partial<Omit<MissedCallRecoverySettings, "updatedAt">> & {
   updatedAt?: string | null;
 };
 
@@ -74,6 +75,24 @@ export function readMissedCallRecoverySettings(appMetadata: unknown) {
   return normalizeMissedCallRecoverySettings(getSettingsRecord(appMetadata));
 }
 
+export function readMissedCallRecoverySettingsForUser(user: {
+  id: string;
+  app_metadata?: unknown;
+}) {
+  const settings = readMissedCallRecoverySettings(user.app_metadata);
+  const businessAccount = readBusinessAccountFromUser({
+    id: user.id,
+    app_metadata: user.app_metadata ?? null
+  });
+
+  return {
+    ...settings,
+    businessName: businessAccount.businessName,
+    solutionMode: businessAccount.solutionMode,
+    businessVertical: businessAccount.businessVertical
+  };
+}
+
 export function validateMissedCallRecoverySettings(settings: MissedCallRecoverySettings) {
   const errors: string[] = [];
 
@@ -100,7 +119,10 @@ export async function getMissedCallRecoverySettings(userId: string) {
     throw error;
   }
 
-  return readMissedCallRecoverySettings(data.user?.app_metadata);
+  return readMissedCallRecoverySettingsForUser({
+    id: userId,
+    app_metadata: data.user?.app_metadata
+  });
 }
 
 export async function updateMissedCallRecoverySettings({
@@ -127,10 +149,24 @@ export async function updateMissedCallRecoverySettings({
     updatedAt: new Date().toISOString()
   });
 
-  existingAppMetadata.orvelle_missed_call_recovery_settings = nextSettings;
+  existingAppMetadata.orvelle_missed_call_recovery_settings = {
+    callbackNumber: nextSettings.callbackNumber,
+    defaultCallbackWindow: nextSettings.defaultCallbackWindow,
+    businessHours: nextSettings.businessHours,
+    autoFollowUpEnabled: nextSettings.autoFollowUpEnabled,
+    smsTemplate: nextSettings.smsTemplate,
+    updatedAt: nextSettings.updatedAt
+  };
+  const metadataPayload = mergeBusinessAccountMetadata({
+    existingAppMetadata,
+    userId,
+    businessName: nextSettings.businessName,
+    solutionMode: nextSettings.solutionMode,
+    businessVertical: nextSettings.businessVertical
+  });
 
   const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
-    app_metadata: existingAppMetadata
+    app_metadata: metadataPayload
   });
 
   if (updateError) {
