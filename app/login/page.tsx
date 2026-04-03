@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogoIcon } from "@/components/icons";
+import { createClient } from "@/lib/supabase/client";
 
 function getLoginErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -19,25 +20,10 @@ function getLoginErrorMessage(error: unknown) {
 
   if (
     normalized.includes("invalid login credentials") ||
-    normalized.includes("invalid email or password")
+    normalized.includes("invalid email or password") ||
+    normalized.includes("email not confirmed")
   ) {
     return "Invalid email or password.";
-  }
-
-  if (
-    normalized.includes("email not confirmed") ||
-    normalized.includes("invite") ||
-    normalized.includes("expired")
-  ) {
-    return "Your invite may not be completed yet. Set your password from the invite email or request a new invite.";
-  }
-
-  if (
-    normalized.includes("business account is not fully set up") ||
-    normalized.includes("business account") ||
-    normalized.includes("account setup")
-  ) {
-    return "Your sign-in worked, but your business account is not fully set up yet. Contact support to finish access.";
   }
 
   return "Unable to sign in right now. Please try again.";
@@ -61,31 +47,18 @@ export default function LoginPage() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          email: email.trim(),
-          password
-        })
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password
       });
 
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            ok?: boolean;
-            message?: string;
-            redirectTo?: string;
-          }
-        | null;
-
-      if (!response.ok || !payload?.ok) {
-        setErrorMessage(getLoginErrorMessage(payload?.message || "Unable to sign in right now."));
+      if (error) {
+        setErrorMessage(getLoginErrorMessage(error));
         return;
       }
 
-      router.replace(payload.redirectTo || "/dashboard");
+      router.replace("/dashboard");
       router.refresh();
     } catch (error) {
       setErrorMessage(getLoginErrorMessage(error));
