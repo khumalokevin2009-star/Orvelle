@@ -6,6 +6,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
 import type { CallRecordDetail, TranscriptEntry } from "@/lib/call-detail";
+import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
+import { defaultSolutionMode, type SolutionMode } from "@/lib/solution-mode";
 import { createClient } from "@/lib/supabase/client";
 import {
   assignMissedCallWorkflowOwner,
@@ -200,12 +202,15 @@ function parseTranscriptEntriesFromText(transcriptText: string): TranscriptEntry
 
 export function CallRecordPage({
   initialRow,
-  detail
+  detail,
+  solutionMode = defaultSolutionMode
 }: {
   initialRow: DashboardCallRow;
   detail: CallRecordDetail;
+  solutionMode?: SolutionMode;
 }) {
   const router = useRouter();
+  const copy = getSolutionModeCopy(solutionMode);
   const [row, setRow] = useState(() => mergeMissedCallWorkflowRow(initialRow));
   const [detailState, setDetailState] = useState(() => normalizeDetailState(detail));
   const [notice, setNotice] = useState<string | null>(null);
@@ -226,7 +231,7 @@ export function CallRecordPage({
   const bookingCreatedLabel = isMissedCallRecovery ? getMissedCallBookingCreatedLabel(row) : null;
   const currentWorkflowStatus = isMissedCallRecovery ? getMissedCallWorkflowStatus(row) : null;
   const backHref = isMissedCallRecovery ? "/missed-calls" : "/dashboard";
-  const backLabel = isMissedCallRecovery ? "Back to Missed Calls" : "Back to Dashboard";
+  const backLabel = isMissedCallRecovery ? copy.callRecord.backLabel : "Back to Dashboard";
   const primaryStatusValue = isMissedCallRecovery
     ? (currentWorkflowStatus ?? "Action Required")
     : operationalOutcome;
@@ -574,10 +579,10 @@ export function CallRecordPage({
       ) : null}
 
       <WorkspacePageHeader
-        title={isMissedCallRecovery ? "Missed Call Recovery Record" : "Call Analysis Record"}
+        title={isMissedCallRecovery ? copy.callRecord.missedCallTitle : "Call Analysis Record"}
         description={
           isMissedCallRecovery
-            ? "Detailed review of a missed inbound call, the revenue risk attached to it, and the next operational recovery step."
+            ? copy.callRecord.missedCallDescription
             : "Detailed inspection of a flagged interaction, associated conversion failure indicators, and required revenue recovery actions."
         }
         actions={

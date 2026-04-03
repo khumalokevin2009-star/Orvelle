@@ -4,6 +4,20 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { SettingToggle } from "@/components/setting-toggle";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
+import {
+  getOnboardingPresetById,
+  onboardingPresets,
+  type OnboardingPresetId
+} from "@/lib/onboarding-presets";
+import { getPricingReferenceContent } from "@/lib/pricing-reference";
+import {
+  businessVerticalOptions,
+  defaultBusinessVertical,
+  defaultSolutionMode,
+  solutionModeOptions,
+  type BusinessVertical,
+  type SolutionMode
+} from "@/lib/solution-mode";
 
 type UserAccessRecord = {
   id: string;
@@ -63,7 +77,8 @@ const disabledUserAccessButtonClassName =
 export default function SettingsPage() {
   const [businessProfile, setBusinessProfile] = useState({
     businessName: "Cotrnested Services Ltd.",
-    businessSector: "Residential HVAC Services",
+    solutionMode: defaultSolutionMode as SolutionMode,
+    businessVertical: defaultBusinessVertical as BusinessVertical,
     contactEmail: "ops@cotrnested.com",
     callbackNumber: "",
     businessHours: "Mon-Fri, 08:00-18:00"
@@ -116,6 +131,31 @@ export default function SettingsPage() {
     }));
   }
 
+  function applyOnboardingPreset(presetId: OnboardingPresetId) {
+    const preset = getOnboardingPresetById(presetId);
+
+    if (!preset) {
+      return;
+    }
+
+    setBusinessProfile((current) => ({
+      ...current,
+      solutionMode: preset.businessProfile.solutionMode,
+      businessVertical: preset.businessProfile.businessVertical,
+      businessHours: preset.businessProfile.businessHours
+    }));
+
+    setMissedCallRecovery((current) => ({
+      ...current,
+      defaultCallbackWindow: preset.missedCallRecovery.defaultCallbackWindow,
+      autoFollowUpEnabled: preset.missedCallRecovery.autoFollowUpEnabled,
+      smsTemplate: preset.missedCallRecovery.smsTemplate
+    }));
+
+    setRecoverySettingsNoticeTone("success");
+    setRecoverySettingsNotice(`${preset.label} preset applied. Review the values and save to keep them.`);
+  }
+
   useEffect(() => {
     let isMounted = true;
 
@@ -128,6 +168,8 @@ export default function SettingsPage() {
           | {
               settings?: {
                 businessName?: string;
+                solutionMode?: SolutionMode;
+                businessVertical?: BusinessVertical;
                 callbackNumber?: string;
                 defaultCallbackWindow?: string;
                 businessHours?: string;
@@ -149,6 +191,8 @@ export default function SettingsPage() {
         setBusinessProfile((current) => ({
           ...current,
           businessName: payload.settings?.businessName || current.businessName,
+          solutionMode: payload.settings?.solutionMode || current.solutionMode,
+          businessVertical: payload.settings?.businessVertical || current.businessVertical,
           callbackNumber: payload.settings?.callbackNumber || "",
           businessHours: payload.settings?.businessHours || current.businessHours
         }));
@@ -199,6 +243,10 @@ export default function SettingsPage() {
     missedCallRecovery.defaultCallbackWindow,
     missedCallRecovery.smsTemplate
   ]);
+  const pricingReference = useMemo(
+    () => getPricingReferenceContent(businessProfile.solutionMode),
+    [businessProfile.solutionMode]
+  );
 
   async function handleSaveMissedCallRecoverySettings() {
     if (!missedCallRecovery.defaultCallbackWindow.trim()) {
@@ -231,6 +279,8 @@ export default function SettingsPage() {
         body: JSON.stringify({
           settings: {
             businessName: businessProfile.businessName,
+            solutionMode: businessProfile.solutionMode,
+            businessVertical: businessProfile.businessVertical,
             callbackNumber: businessProfile.callbackNumber,
             defaultCallbackWindow: missedCallRecovery.defaultCallbackWindow,
             businessHours: businessProfile.businessHours,
@@ -285,76 +335,133 @@ export default function SettingsPage() {
             title="Business Profile"
             description="Maintain the core business information used throughout reporting, follow-up messaging, and operational workflows."
           >
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <Field label="Business Name">
-                  <input
-                    type="text"
-                    value={businessProfile.businessName}
+            <div className="space-y-4">
+              <div className="surface-secondary px-4 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-[620px]">
+                    <div className="type-label-text text-[12px]">Quick Setup Presets</div>
+                    <p className="type-body-text mt-2 text-[14px] leading-6">
+                      Apply a preset to prefill solution mode, business vertical, business hours, callback promise, and default recovery SMS copy using the same shared platform settings.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2.5 sm:min-w-[360px]">
+                    {onboardingPresets.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => applyOnboardingPreset(preset.id)}
+                        className="button-secondary-ui inline-flex min-h-[48px] items-center justify-center px-4 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {onboardingPresets.map((preset) => (
+                    <div key={`${preset.id}-detail`} className="rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 py-3">
+                      <div className="type-section-title text-[15px]">{preset.label}</div>
+                      <p className="type-body-text mt-1.5 text-[13px] leading-6">{preset.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <Field label="Business Name">
+                    <input
+                      type="text"
+                      value={businessProfile.businessName}
+                      onChange={(event) =>
+                        setBusinessProfile((current) => ({
+                          ...current,
+                          businessName: event.target.value
+                        }))
+                      }
+                      className={inputClassName}
+                    />
+                  </Field>
+                </div>
+                <Field label="Solution Mode">
+                  <select
+                    value={businessProfile.solutionMode}
                     onChange={(event) =>
                       setBusinessProfile((current) => ({
                         ...current,
-                        businessName: event.target.value
+                        solutionMode: event.target.value as SolutionMode
+                      }))
+                    }
+                    className={inputClassName}
+                  >
+                    {solutionModeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Primary Contact Email">
+                  <input
+                    type="email"
+                    value={businessProfile.contactEmail}
+                    onChange={(event) =>
+                      setBusinessProfile((current) => ({
+                        ...current,
+                        contactEmail: event.target.value
                       }))
                     }
                     className={inputClassName}
                   />
                 </Field>
+                <Field label="Business Vertical">
+                  <select
+                    value={businessProfile.businessVertical}
+                    onChange={(event) =>
+                      setBusinessProfile((current) => ({
+                        ...current,
+                        businessVertical: event.target.value as BusinessVertical
+                      }))
+                    }
+                    className={inputClassName}
+                  >
+                    {businessVerticalOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Callback Number">
+                  <input
+                    type="tel"
+                    value={businessProfile.callbackNumber}
+                    onChange={(event) =>
+                      setBusinessProfile((current) => ({
+                        ...current,
+                        callbackNumber: event.target.value
+                      }))
+                    }
+                    placeholder="+44 7900 261143"
+                    className={inputClassName}
+                  />
+                </Field>
+                <Field label="Business Hours">
+                  <input
+                    type="text"
+                    value={businessProfile.businessHours}
+                    onChange={(event) =>
+                      setBusinessProfile((current) => ({
+                        ...current,
+                        businessHours: event.target.value
+                      }))
+                    }
+                    placeholder="Mon-Fri, 08:00-18:00"
+                    className={inputClassName}
+                  />
+                </Field>
               </div>
-              <Field label="Business Sector">
-                <input
-                  type="text"
-                  value={businessProfile.businessSector}
-                  onChange={(event) =>
-                    setBusinessProfile((current) => ({
-                      ...current,
-                      businessSector: event.target.value
-                    }))
-                  }
-                  className={inputClassName}
-                />
-              </Field>
-              <Field label="Primary Contact Email">
-                <input
-                  type="email"
-                  value={businessProfile.contactEmail}
-                  onChange={(event) =>
-                    setBusinessProfile((current) => ({
-                      ...current,
-                      contactEmail: event.target.value
-                    }))
-                  }
-                  className={inputClassName}
-                />
-              </Field>
-              <Field label="Callback Number">
-                <input
-                  type="tel"
-                  value={businessProfile.callbackNumber}
-                  onChange={(event) =>
-                    setBusinessProfile((current) => ({
-                      ...current,
-                      callbackNumber: event.target.value
-                    }))
-                  }
-                  placeholder="+44 7900 261143"
-                  className={inputClassName}
-                />
-              </Field>
-              <Field label="Business Hours">
-                <input
-                  type="text"
-                  value={businessProfile.businessHours}
-                  onChange={(event) =>
-                    setBusinessProfile((current) => ({
-                      ...current,
-                      businessHours: event.target.value
-                    }))
-                  }
-                  placeholder="Mon-Fri, 08:00-18:00"
-                  className={inputClassName}
-                />
-              </Field>
             </div>
           </SectionCard>
 
@@ -511,6 +618,42 @@ export default function SettingsPage() {
         </section>
 
         <aside className="space-y-4 sm:space-y-5 xl:border-l xl:border-[#E5E7EB] xl:pl-5">
+          <SectionCard
+            title="Founder-Led Pricing Reference"
+            description="Internal pricing guidance for the currently selected solution mode. This is reference content only and does not affect billing."
+          >
+            <div className="space-y-4">
+              <div className="rounded-[12px] border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-4">
+                <div className="type-section-title text-[15px]">{pricingReference.title}</div>
+                <p className="type-body-text mt-2 text-[13px] leading-6">{pricingReference.description}</p>
+                <p className="type-body-text mt-3 text-[13px] leading-6">{pricingReference.guidance}</p>
+              </div>
+
+              <div className="space-y-3">
+                {pricingReference.packages.map((pkg) => (
+                  <div key={pkg.label} className="surface-secondary px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="type-section-title text-[15px]">{pkg.label}</div>
+                        <p className="type-body-text mt-1 text-[13px] leading-6">{pkg.note}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3.5 py-3">
+                        <div className="type-label-text text-[11px]">Onboarding</div>
+                        <div className="type-section-title mt-2 text-[15px]">{pkg.onboarding}</div>
+                      </div>
+                      <div className="rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3.5 py-3">
+                        <div className="type-label-text text-[11px]">Monthly</div>
+                        <div className="type-section-title mt-2 text-[15px]">{pkg.monthly}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </SectionCard>
+
           <SectionCard
             title="User Access"
             description="Review user accounts, assigned roles, and access ownership across the platform."

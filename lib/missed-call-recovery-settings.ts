@@ -1,9 +1,19 @@
 import "server-only";
 
+import {
+  defaultBusinessVertical,
+  defaultSolutionMode,
+  normalizeBusinessVertical,
+  normalizeSolutionMode,
+  type BusinessVertical,
+  type SolutionMode
+} from "@/lib/solution-mode";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type MissedCallRecoverySettings = {
   businessName: string;
+  solutionMode: SolutionMode;
+  businessVertical: BusinessVertical;
   callbackNumber: string;
   defaultCallbackWindow: string;
   businessHours: string;
@@ -21,6 +31,8 @@ const defaultSmsTemplate =
 
 export const defaultMissedCallRecoverySettings: MissedCallRecoverySettings = {
   businessName: "Cotrnested Services Ltd.",
+  solutionMode: defaultSolutionMode,
+  businessVertical: defaultBusinessVertical,
   callbackNumber: "",
   defaultCallbackWindow: "2 business hours",
   businessHours: "Mon-Fri, 08:00-18:00",
@@ -46,6 +58,8 @@ export function normalizeMissedCallRecoverySettings(
 ): MissedCallRecoverySettings {
   return {
     businessName: input?.businessName?.trim() || defaultMissedCallRecoverySettings.businessName,
+    solutionMode: normalizeSolutionMode(input?.solutionMode),
+    businessVertical: normalizeBusinessVertical(input?.businessVertical),
     callbackNumber: input?.callbackNumber?.trim() || defaultMissedCallRecoverySettings.callbackNumber,
     defaultCallbackWindow:
       input?.defaultCallbackWindow?.trim() || defaultMissedCallRecoverySettings.defaultCallbackWindow,

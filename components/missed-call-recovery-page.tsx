@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { demoMissedCallRecoveryRows } from "@/lib/demo-dashboard-data";
+import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
+import { defaultSolutionMode, type SolutionMode } from "@/lib/solution-mode";
 import { createClient } from "@/lib/supabase/client";
 import { buildMissedCallRecoveryRows, type DashboardCallRow } from "@/lib/dashboard-calls";
 import {
@@ -109,8 +111,13 @@ function DetailField({
   );
 }
 
-export function MissedCallRecoveryPage() {
+export function MissedCallRecoveryPage({
+  solutionMode = defaultSolutionMode
+}: {
+  solutionMode?: SolutionMode;
+}) {
   const router = useRouter();
+  const copy = getSolutionModeCopy(solutionMode);
   const [rows, setRows] = useState(() => mergeMissedCallWorkflowRows(demoMissedCallRecoveryRows));
   const [selectedCallId, setSelectedCallId] = useState(demoMissedCallRecoveryRows[0]?.id ?? null);
   const [activityMessage, setActivityMessage] = useState<string | null>(null);
@@ -332,8 +339,8 @@ export function MissedCallRecoveryPage() {
   return (
     <main className="space-y-6 lg:space-y-7">
       <WorkspacePageHeader
-        title="Missed Call Recovery"
-        description="Review missed inbound calls, assess revenue risk, and trigger follow-up actions."
+        title={copy.recoveryPage.title}
+        description={copy.recoveryPage.description}
       />
 
       {dataMode !== "live" ? (
@@ -372,19 +379,31 @@ export function MissedCallRecoveryPage() {
 
       <section className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
-          label="Missed Calls Today"
-          value={String(summary.missedCallsToday)}
-          detail="Inbound calls captured in today’s recovery queue."
+          label={copy.recoveryPage.summaryPrimaryLabel}
+          value={
+            solutionMode === "service_business_missed_call_recovery"
+              ? String(summary.missedCallsToday)
+              : String(summary.awaitingFollowUp)
+          }
+          detail={
+            solutionMode === "service_business_missed_call_recovery"
+              ? "Inbound calls captured in today’s recovery queue."
+              : "Calls with unresolved conversion or recovery failures requiring review."
+          }
         />
         <SummaryCard
-          label="Calls Awaiting Follow-Up"
+          label={copy.recoveryPage.summaryFollowUpLabel}
           value={String(summary.awaitingFollowUp)}
           detail="Missed opportunities still requiring an outreach action."
         />
         <SummaryCard
-          label="Estimated Revenue At Risk"
-          value={formatCurrency(summary.revenueAtRisk)}
-          detail="Potential booked revenue exposed across unresolved calls."
+          label={copy.recoveryPage.summaryRiskLabel}
+          value={
+            solutionMode === "service_business_missed_call_recovery"
+              ? String(summary.awaitingFollowUp)
+              : formatCurrency(summary.revenueAtRisk)
+          }
+          detail={copy.recoveryPage.summaryRiskDetail}
         />
         <SummaryCard
           label="Recovery Rate"
@@ -396,7 +415,7 @@ export function MissedCallRecoveryPage() {
       {queueFocusCall ? (
         <section className="surface-primary motion-fade-up overflow-hidden border-[#D1D5DB] shadow-[0_18px_36px_rgba(17,24,39,0.05)]">
           <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6 sm:py-6">
-            <div className="type-label-text text-[11px]">Focused call</div>
+            <div className="type-label-text text-[11px]">{copy.recoveryPage.focusedLabel}</div>
             <h2 className="type-page-title mt-2 text-[26px] sm:text-[30px]">{queueFocusCall.caller}</h2>
             <p className="type-body-text mt-2 max-w-[760px] text-[14px] leading-6">
               {queueFocusCall.summary}
@@ -447,9 +466,9 @@ export function MissedCallRecoveryPage() {
         <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6 sm:py-5.5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h2 className="type-section-title text-[20px] sm:text-[22px]">Recovery queue</h2>
+              <h2 className="type-section-title text-[20px] sm:text-[22px]">{copy.recoveryPage.queueTitle}</h2>
               <p className="type-body-text mt-2 text-[14px] leading-6">
-                Operational work surface for triaging missed inbound calls and keeping high-value follow-up on track.
+                {copy.recoveryPage.queueDescription}
               </p>
             </div>
 

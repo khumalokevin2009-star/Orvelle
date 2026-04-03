@@ -12,55 +12,62 @@ import {
   UploadIcon
 } from "@/components/icons";
 import { OrvelleBrandIcon } from "@/components/orvelle-brand";
+import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
+import { defaultSolutionMode, type SolutionMode } from "@/lib/solution-mode";
 import { createClient } from "@/lib/supabase/client";
 
 type DashboardShellProps = {
   children: ReactNode;
+  solutionMode?: SolutionMode;
 };
 
-const navItems = [
-  {
-    href: "/dashboard",
-    label: "Call Performance Overview",
-    mobileLabel: "Dashboard",
-    icon: DashboardIcon,
-    matches: (pathname: string) => pathname === "/dashboard" || pathname.startsWith("/call/")
-  },
-  {
-    href: "/upload",
-    label: "Upload Call Data",
-    mobileLabel: "Upload",
-    icon: UploadIcon,
-    matches: (pathname: string) => pathname === "/upload"
-  },
-  {
-    href: "/missed-calls",
-    label: "Missed Call Recovery",
-    mobileLabel: "Recovery",
-    icon: InboxIcon,
-    matches: (pathname: string) => pathname === "/missed-calls"
-  },
-  {
-    href: "/automations",
-    label: "Workflow Rules",
-    mobileLabel: "Rules",
-    icon: BoltIcon,
-    matches: (pathname: string) => pathname === "/automations"
-  },
-  {
-    href: "/settings",
-    label: "Configuration",
-    mobileLabel: "Settings",
-    icon: SettingsIcon,
-    matches: (pathname: string) =>
-      pathname === "/settings" || pathname.startsWith("/settings/")
-  }
-] as const;
-
-export function DashboardShell({ children }: DashboardShellProps) {
+export function DashboardShell({
+  children,
+  solutionMode = defaultSolutionMode
+}: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const copy = getSolutionModeCopy(solutionMode);
+  const navItems = [
+    {
+      href: "/dashboard",
+      label: copy.shell.dashboardLabel,
+      mobileLabel: copy.shell.dashboardMobileLabel,
+      icon: DashboardIcon,
+      matches: (currentPathname: string) =>
+        currentPathname === "/dashboard" || currentPathname.startsWith("/call/")
+    },
+    {
+      href: "/upload",
+      label: "Upload Call Data",
+      mobileLabel: "Upload",
+      icon: UploadIcon,
+      matches: (currentPathname: string) => currentPathname === "/upload"
+    },
+    {
+      href: "/missed-calls",
+      label: copy.shell.recoveryLabel,
+      mobileLabel: copy.shell.recoveryMobileLabel,
+      icon: InboxIcon,
+      matches: (currentPathname: string) => currentPathname === "/missed-calls"
+    },
+    {
+      href: "/automations",
+      label: copy.shell.automationsLabel,
+      mobileLabel: "Rules",
+      icon: BoltIcon,
+      matches: (currentPathname: string) => currentPathname === "/automations"
+    },
+    {
+      href: "/settings",
+      label: copy.shell.settingsLabel,
+      mobileLabel: "Settings",
+      icon: SettingsIcon,
+      matches: (currentPathname: string) =>
+        currentPathname === "/settings" || currentPathname.startsWith("/settings/")
+    }
+  ] as const;
   const activeNavItem = navItems.find(({ matches }) => matches(pathname)) ?? navItems[0];
 
   async function handleSignOut() {

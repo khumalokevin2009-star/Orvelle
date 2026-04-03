@@ -13,6 +13,8 @@ export { dateRangeOptions, getDateRangeLabel };
 export type { DateRangeKey };
 
 type DashboardHeaderProps = {
+  title?: string;
+  description?: string;
   selectedRange: DateRangeKey;
   summaryItems: string[];
   onSelectRange: (range: DateRangeKey) => void;
@@ -20,6 +22,8 @@ type DashboardHeaderProps = {
 };
 
 export function DashboardHeader({
+  title = "Revenue Recovery Overview",
+  description = "A structured operating view of missed revenue, recovery performance, and the next calls your team should act on.",
   selectedRange,
   summaryItems,
   onSelectRange,
@@ -94,11 +98,9 @@ export function DashboardHeader({
   return (
     <div className="motion-fade-up relative z-20 flex flex-col gap-5 overflow-visible sm:gap-6 lg:flex-row lg:items-start lg:justify-between">
       <div className="max-w-[760px] pt-1">
-        <h1 className="type-page-title text-[29px] sm:text-[33px]">
-          Revenue Recovery Overview
-        </h1>
+        <h1 className="type-page-title text-[29px] sm:text-[33px]">{title}</h1>
         <p className="type-body-text mt-2.5 max-w-[720px] text-[15px] leading-7">
-          A structured operating view of missed revenue, recovery performance, and the next calls your team should act on.
+          {description}
         </p>
         <div className="mt-4 flex flex-wrap gap-2.5">
           {summaryItems.map((item) => (

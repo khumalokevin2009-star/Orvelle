@@ -11,20 +11,43 @@ import { MissedOpportunitiesChart } from "@/components/missed-opportunities-char
 import { type CallTableRow } from "@/data/mock-platform-data";
 import {
   buildTrendData,
+  buildMissedCallRecoveryRows,
   getLastUpdatedLabel,
   isWithinDateRange,
   type DashboardCallRow
 } from "@/lib/dashboard-calls";
 import {
   demoDashboardMetricSnapshot,
+  demoMissedCallRecoveryRows,
   demoTrendByRange
 } from "@/lib/demo-dashboard-data";
+import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
+import { defaultSolutionMode, type SolutionMode } from "@/lib/solution-mode";
 
 type PrimaryMetricItem = {
   label: string;
   value: string;
   detail: string;
 };
+
+function isStartedToday(startedAt: string) {
+  const targetDate = new Date(startedAt);
+  const currentDate = new Date();
+
+  return (
+    targetDate.getFullYear() === currentDate.getFullYear() &&
+    targetDate.getMonth() === currentDate.getMonth() &&
+    targetDate.getDate() === currentDate.getDate()
+  );
+}
+
+function getNormalizedOutcome(row: DashboardCallRow) {
+  return (row.callOutcome ?? "").trim().toLowerCase();
+}
+
+function isHighIntent(row: DashboardCallRow) {
+  return (row.intentLevel ?? "").trim().toLowerCase().includes("high");
+}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-GB", {
@@ -120,22 +143,27 @@ function buildMissedRevenueTrendData(rows: DashboardCallRow[], range: DateRangeK
 }
 
 function PrimaryMetrics({
-  items
+  items,
+  description = "Revenue exposure, recovery progress, and analysis coverage for the active window."
 }: {
   items: PrimaryMetricItem[];
+  description?: string;
 }) {
+  const gridClassName =
+    items.length === 5 ? "grid gap-3.5 sm:grid-cols-2 xl:grid-cols-5" : "grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4";
+
   return (
     <section className="motion-fade-up">
       <div className="mb-4 sm:mb-5">
         <div>
           <h2 className="type-section-title text-[19px] sm:text-[20px]">Key metrics</h2>
           <p className="type-body-text mt-1.5 text-[14px] leading-6">
-            Revenue exposure, recovery progress, and analysis coverage for the active window.
+            {description}
           </p>
         </div>
       </div>
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={gridClassName}>
         {items.map((item, index) => (
           <div
             key={item.label}
@@ -155,12 +183,20 @@ function PrimaryMetrics({
 function PriorityCallbacksPanel({
   rows,
   selectedRange,
+  eyebrow = "Core operating queue",
+  title = "Priority Callbacks",
+  description,
+  emptyMessage = "All analysed calls in the current window are either resolved or outside the selected trend focus.",
   onOpenRecord,
   onAssignFollowUp,
   onMarkResolved
 }: {
   rows: DashboardCallRow[];
   selectedRange: DateRangeKey;
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+  emptyMessage?: string;
   onOpenRecord: (row: DashboardCallRow) => void;
   onAssignFollowUp: (row: DashboardCallRow) => void;
   onMarkResolved: (row: DashboardCallRow) => void;
@@ -173,11 +209,13 @@ function PriorityCallbacksPanel({
       <div className="border-b border-[#E5E7EB] px-5 py-6 sm:px-7 sm:py-7">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <div className="type-label-text text-[11px]">Core operating queue</div>
-            <h2 className="type-page-title mt-2 text-[29px] sm:text-[33px]">Priority Callbacks</h2>
+            <div className="type-label-text text-[11px]">{eyebrow}</div>
+            <h2 className="type-page-title mt-2 text-[29px] sm:text-[33px]">{title}</h2>
             <p className="type-body-text mt-3 max-w-[780px] text-[15px] leading-7">
-              The highest-value missed opportunities your team should call back first in{" "}
-              {getDateRangeLabel(selectedRange).toLowerCase()}.
+              {description ??
+                `The highest-value missed opportunities your team should call back first in ${getDateRangeLabel(
+                  selectedRange
+                ).toLowerCase()}.`}
             </p>
           </div>
 
@@ -298,9 +336,7 @@ function PriorityCallbacksPanel({
         ) : (
           <div className="px-5 py-10 text-center sm:px-6">
             <div className="type-section-title text-[18px]">No priority callbacks in this view</div>
-            <p className="type-body-text mt-2 text-[14px]">
-              All analysed calls in the current window are either resolved or outside the selected trend focus.
-            </p>
+            <p className="type-body-text mt-2 text-[14px]">{emptyMessage}</p>
           </div>
         )}
       </div>
@@ -309,10 +345,14 @@ function PriorityCallbacksPanel({
 }
 
 function CallsOverviewTable({
+  title,
+  description,
   rows,
   emptyMessage,
   onOpenRecord
 }: {
+  title: string;
+  description: string;
   rows: DashboardCallRow[];
   emptyMessage: string;
   onOpenRecord: (row: DashboardCallRow) => void;
@@ -320,9 +360,9 @@ function CallsOverviewTable({
   return (
     <section className="surface-primary motion-fade-up overflow-hidden">
       <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6 sm:py-5.5">
-        <h2 className="type-section-title text-[20px] sm:text-[22px]">Analysed calls</h2>
+        <h2 className="type-section-title text-[20px] sm:text-[22px]">{title}</h2>
         <p className="type-body-text mt-2 text-[14px] leading-6">
-          Operational queue showing the calls your team needs to review, recover, or close out.
+          {description}
         </p>
       </div>
 
@@ -415,10 +455,14 @@ export default function HomePage() {
   const [selectedRange, setSelectedRange] = useState<DateRangeKey>("30d");
   const [activeTrendBucket, setActiveTrendBucket] = useState<string | null>(null);
   const [rowsState, setRowsState] = useState<DashboardCallRow[]>([]);
+  const [solutionMode, setSolutionMode] = useState<SolutionMode>(defaultSolutionMode);
   const [dashboardMode, setDashboardMode] = useState<"live" | "demo">("live");
   const [dataState, setDataState] = useState<"loading" | "ready" | "error">("loading");
   const [dataError, setDataError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const isServiceBusinessMode = solutionMode === "service_business_missed_call_recovery";
+  const copy = getSolutionModeCopy(solutionMode);
 
   const rowsInSelectedRange = useMemo(
     () => rowsState.filter((row) => isWithinDateRange(row.startedAtRaw, selectedRange)),
@@ -432,6 +476,16 @@ export default function HomePage() {
         : rowsInSelectedRange,
     [activeTrendBucket, rowsInSelectedRange, selectedRange]
   );
+
+  const recoveryRowsInSelectedRange = useMemo(() => {
+    const recoveryRows = buildMissedCallRecoveryRows(rowsInSelectedRange);
+
+    if (dashboardMode === "demo" && recoveryRows.length === 0) {
+      return demoMissedCallRecoveryRows.filter((row) => isWithinDateRange(row.startedAtRaw, selectedRange));
+    }
+
+    return recoveryRows;
+  }, [dashboardMode, rowsInSelectedRange, selectedRange]);
 
   const missedRevenueTrendData = useMemo(
     () =>
@@ -475,6 +529,49 @@ export default function HomePage() {
     [rowsInSelectedRange]
   );
 
+  const conversionFailures = useMemo(
+    () =>
+      rowsInSelectedRange.filter((row) => {
+        const normalizedOutcome = getNormalizedOutcome(row);
+
+        return (
+          getRowActionStatus(row) === "Needs Action" &&
+          normalizedOutcome !== "pending" &&
+          normalizedOutcome !== "unqualified"
+        );
+      }).length,
+    [rowsInSelectedRange]
+  );
+
+  const followUpDelays = useMemo(
+    () =>
+      rowsInSelectedRange.filter(
+        (row) => row.category === "delayed-response" && getRowActionStatus(row) === "Needs Action"
+      ).length,
+    [rowsInSelectedRange]
+  );
+
+  const highIntentUnconvertedCalls = useMemo(
+    () =>
+      rowsInSelectedRange.filter(
+        (row) => isHighIntent(row) && getRowActionStatus(row) === "Needs Action"
+      ).length,
+    [rowsInSelectedRange]
+  );
+
+  const managerReviewCases = useMemo(
+    () =>
+      rowsInSelectedRange.filter((row) => {
+        const normalizedOutcome = getNormalizedOutcome(row);
+
+        return (
+          getRowActionStatus(row) === "Needs Action" &&
+          (row.status === "Escalated" || normalizedOutcome.includes("poor handling"))
+        );
+      }).length,
+    [rowsInSelectedRange]
+  );
+
   const priorityRows = useMemo(
     () =>
       sortPriorityRows(
@@ -483,82 +580,213 @@ export default function HomePage() {
     [focusedRows]
   );
 
+  const servicePriorityRows = useMemo(
+    () =>
+      sortPriorityRows(
+        recoveryRowsInSelectedRange.filter((row) => getRowActionStatus(row) === "Needs Action")
+      ).slice(0, 4),
+    [recoveryRowsInSelectedRange]
+  );
+
+  const serviceRecoveryRows = useMemo(
+    () => sortPriorityRows(recoveryRowsInSelectedRange),
+    [recoveryRowsInSelectedRange]
+  );
+
+  const serviceMissedCallsToday = useMemo(
+    () => recoveryRowsInSelectedRange.filter((row) => isStartedToday(row.startedAtRaw)).length,
+    [recoveryRowsInSelectedRange]
+  );
+
+  const serviceAwaitingFollowUp = useMemo(
+    () =>
+      recoveryRowsInSelectedRange.filter(
+        (row) => row.workflowStatusLabel === "Action Required" || row.workflowStatusLabel === "Escalated"
+      ).length,
+    [recoveryRowsInSelectedRange]
+  );
+
+  const serviceSmsSent = useMemo(
+    () => recoveryRowsInSelectedRange.filter((row) => row.workflowStatusLabel === "Follow-Up Sent").length,
+    [recoveryRowsInSelectedRange]
+  );
+
+  const serviceUnresolvedCases = useMemo(
+    () => recoveryRowsInSelectedRange.filter((row) => row.workflowStatusLabel !== "Resolved").length,
+    [recoveryRowsInSelectedRange]
+  );
+
+  const serviceRevenueAtRisk = useMemo(
+    () =>
+      recoveryRowsInSelectedRange
+        .filter((row) => row.workflowStatusLabel !== "Resolved")
+        .reduce((sum, row) => sum + row.revenueValue, 0),
+    [recoveryRowsInSelectedRange]
+  );
+
   const primaryMetrics = useMemo<PrimaryMetricItem[]>(() => {
-    if (dataState !== "ready") {
+    if (isServiceBusinessMode) {
+      if (dataState !== "ready") {
+        return [
+          {
+            label: "Missed Calls Today",
+            value: "—",
+            detail: "Loading today’s inbound calls that require recovery action"
+          },
+          {
+            label: copy.dashboard.serviceFollowUpLabel,
+            value: "—",
+            detail: "Loading cases that still need a manual callback or escalation"
+          },
+          {
+            label: "SMS Sent",
+            value: "—",
+            detail: "Loading automatic and manual missed-call follow-up activity"
+          },
+          {
+            label: copy.dashboard.serviceJobsAtRiskLabel,
+            value: "—",
+            detail: "Loading open recovery work across the active operating window"
+          },
+          {
+            label: "Estimated Revenue At Risk",
+            value: "—",
+            detail: "Loading the value still exposed across unresolved missed-call cases"
+          }
+        ];
+      }
+
       return [
         {
-          label: "Missed Revenue",
-          value: "—",
-          detail: "Loading revenue exposure for the active analysis window"
+          label: "Missed Calls Today",
+          value: String(serviceMissedCallsToday),
+          detail: "Inbound calls from today that entered the missed-call recovery workflow"
         },
         {
-          label: "High-Intent Missed Calls",
-          value: "—",
-          detail: "Loading calls that likely should have converted"
+          label: copy.dashboard.serviceFollowUpLabel,
+          value: String(serviceAwaitingFollowUp),
+          detail: "Open cases that still require a callback, escalation, or same-day action"
         },
         {
-          label: "Recovery Rate",
-          value: "—",
-          detail: "Loading recovery performance across analysed calls"
+          label: "SMS Sent",
+          value: String(serviceSmsSent),
+          detail: "Recovery cases where follow-up has already been initiated by SMS"
         },
         {
-          label: "Calls Analysed",
-          value: "—",
-          detail: "Loading call coverage for the selected period"
+          label: copy.dashboard.serviceJobsAtRiskLabel,
+          value: String(serviceUnresolvedCases),
+          detail: "Active missed-call recovery work still open inside the selected operating window"
+        },
+        {
+          label: "Estimated Revenue At Risk",
+          value: formatCurrency(serviceRevenueAtRisk),
+          detail: "Commercial value still exposed across unresolved service-business missed calls"
         }
       ];
     }
 
-    if (dashboardMode === "demo") {
+    if (dataState !== "ready") {
       return [
         {
-          label: "Missed Revenue",
-          value: formatCurrency(demoDashboardMetricSnapshot.missedRevenue),
-          detail: "Estimated revenue still exposed across the active callback queue"
+          label: "Conversion Failures",
+          value: "—",
+          detail: "Loading unconverted calls where revenue recovery is still required"
         },
         {
-          label: "High-Intent Missed Calls",
-          value: String(demoDashboardMetricSnapshot.highIntentMissedCalls),
-          detail: "High-intent calls that should be prioritised for revenue recovery"
+          label: "Revenue At Risk",
+          value: "—",
+          detail: "Loading commercial value still exposed across unresolved calls"
         },
         {
-          label: "Recovery Rate",
-          value: `${demoDashboardMetricSnapshot.recoveryRate}%`,
-          detail: "Revenue already recovered across the monitored operating window"
+          label: "Follow-Up Delays",
+          value: "—",
+          detail: "Loading calls where response timing or callback handling slipped"
         },
         {
-          label: "Calls Analysed",
-          value: String(demoDashboardMetricSnapshot.callsAnalysed),
-          detail: "Calls processed through the operating system view"
+          label: "High-Intent Unconverted",
+          value: "—",
+          detail: "Loading high-intent enquiries that did not convert cleanly"
+        },
+        {
+          label: "Manager Review Cases",
+          value: "—",
+          detail: "Loading escalation and coaching-style review cases"
         }
       ];
     }
 
     return [
       {
-        label: "Missed Revenue",
+        label: "Conversion Failures",
+        value: String(conversionFailures),
+        detail: "Calls with unresolved commercial failure signals that still need recovery action"
+      },
+      {
+        label: "Revenue At Risk",
         value: formatCurrency(missedRevenue),
-        detail: "Estimated revenue still tied to unresolved missed opportunities"
+        detail: "Estimated revenue still tied to unresolved conversion failures and missed follow-up"
       },
       {
-        label: "High-Intent Missed Calls",
-        value: String(highIntentMissedCalls),
-        detail: "Actionable calls where commercial intent appears strongest"
+        label: "Follow-Up Delays",
+        value: String(followUpDelays),
+        detail: "Calls where response timing drifted and operational follow-up is still outstanding"
       },
       {
-        label: "Recovery Rate",
-        value: `${recoveryRate}%`,
-        detail: `${formatCurrency(recoveredRevenue)} recovered across the selected analysis window`
+        label: "High-Intent Unconverted",
+        value: String(highIntentUnconvertedCalls),
+        detail: "Strong-intent enquiries that did not convert and should be prioritised for review"
       },
       {
-        label: "Calls Analysed",
-        value: String(rowsInSelectedRange.length),
-        detail: "Calls currently represented in the revenue recovery operating view"
+        label: "Manager Review Cases",
+        value: String(managerReviewCases),
+        detail: "Escalated or handling-quality calls that may require coaching or manager review"
       }
     ];
-  }, [dashboardMode, dataState, highIntentMissedCalls, missedRevenue, recoveredRevenue, recoveryRate, rowsInSelectedRange.length]);
+  }, [
+    conversionFailures,
+    dataState,
+    followUpDelays,
+    highIntentUnconvertedCalls,
+    isServiceBusinessMode,
+    managerReviewCases,
+    missedRevenue,
+    serviceAwaitingFollowUp,
+    serviceMissedCallsToday,
+    serviceRevenueAtRisk,
+    serviceSmsSent,
+    serviceUnresolvedCases
+  ]);
 
   const summaryItems = useMemo(() => {
+    if (isServiceBusinessMode) {
+      if (dataState === "loading") {
+        return [
+          `Recovery Window: ${getDateRangeLabel(selectedRange)}`,
+          "Open Cases: Loading...",
+          "SMS Sent: Loading...",
+          "Last Updated: Syncing..."
+        ];
+      }
+
+      if (dataState === "error") {
+        return [
+          `Recovery Window: ${getDateRangeLabel(selectedRange)}`,
+          "Open Cases: Unavailable",
+          "SMS Sent: Unavailable",
+          "Last Updated: Connection failed"
+        ];
+      }
+
+      return [
+        `Recovery Window: ${getDateRangeLabel(selectedRange)}`,
+        `Open Cases: ${serviceUnresolvedCases}`,
+        `SMS Sent: ${serviceSmsSent}`,
+        `Last Updated: ${getLastUpdatedLabel(
+          recoveryRowsInSelectedRange.length > 0 ? recoveryRowsInSelectedRange : rowsState
+        )}`
+      ];
+    }
+
     if (dataState === "loading") {
       return [
         `Analysis Window: ${getDateRangeLabel(selectedRange)}`,
@@ -577,24 +805,26 @@ export default function HomePage() {
       ];
     }
 
-    if (dashboardMode === "demo") {
-      return [
-        `Analysis Window: ${getDateRangeLabel(selectedRange)}`,
-        `Calls Analysed: ${demoDashboardMetricSnapshot.callsAnalysed}`,
-        `Missed Revenue: ${formatCurrency(demoDashboardMetricSnapshot.missedRevenue)}`,
-        activeTrendBucket ? `Focused Period: ${activeTrendBucket}` : "Last Updated: 14 minutes ago"
-      ];
-    }
-
     return [
       `Analysis Window: ${getDateRangeLabel(selectedRange)}`,
-      `Calls Analysed: ${rowsInSelectedRange.length}`,
-      `Missed Revenue: ${formatCurrency(missedRevenue)}`,
+      `Revenue At Risk: ${formatCurrency(missedRevenue)}`,
+      `Follow-Up Delays: ${followUpDelays}`,
       activeTrendBucket
         ? `Focused Period: ${activeTrendBucket}`
-        : `Last Updated: ${getLastUpdatedLabel(rowsInSelectedRange.length > 0 ? rowsInSelectedRange : rowsState)}`
+        : `Missed Calls In Queue: ${serviceUnresolvedCases}`
     ];
-  }, [activeTrendBucket, dashboardMode, dataState, missedRevenue, rowsInSelectedRange, rowsState, selectedRange]);
+  }, [
+    activeTrendBucket,
+    dataState,
+    followUpDelays,
+    isServiceBusinessMode,
+    missedRevenue,
+    recoveryRowsInSelectedRange,
+    rowsState,
+    selectedRange,
+    serviceSmsSent,
+    serviceUnresolvedCases
+  ]);
 
   const callListEmptyMessage = useMemo(() => {
     if (dataState === "loading") {
@@ -615,6 +845,22 @@ export default function HomePage() {
 
     return "No calls match the current operating view.";
   }, [activeTrendBucket, dataError, dataState, rowsState.length]);
+
+  const recoveryListEmptyMessage = useMemo(() => {
+    if (dataState === "loading") {
+      return "Loading missed-call recovery cases from the dashboard data service...";
+    }
+
+    if (dataState === "error") {
+      return dataError ?? "Unable to load missed-call recovery cases right now.";
+    }
+
+    if (recoveryRowsInSelectedRange.length === 0) {
+      return "No missed inbound calls require recovery action in the selected operating window.";
+    }
+
+    return "No recovery cases match the current operating view.";
+  }, [dataError, dataState, recoveryRowsInSelectedRange.length]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -673,6 +919,45 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    let isCancelled = false;
+
+    async function loadSolutionModeSetting() {
+      try {
+        const response = await fetch("/api/settings/missed-call-recovery", {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              settings?: {
+                solutionMode?: SolutionMode;
+              };
+            }
+          | null;
+
+        if (isCancelled) {
+          return;
+        }
+
+        if (!response.ok || !payload?.settings?.solutionMode) {
+          return;
+        }
+
+        setSolutionMode(payload.settings.solutionMode);
+      } catch (error) {
+        console.error("[dashboard] Failed to load solution mode setting.", error);
+      }
+    }
+
+    void loadSolutionModeSetting();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!notice) return;
 
     const timeoutId = window.setTimeout(() => setNotice(null), 2600);
@@ -696,6 +981,8 @@ export default function HomePage() {
   }
 
   function buildResolvedRow(row: DashboardCallRow): DashboardCallRow {
+    const updatedAtRaw = new Date().toISOString();
+
     return {
       ...row,
       issue: "Revenue reinstated",
@@ -712,6 +999,8 @@ export default function HomePage() {
         "Case closure confirmed. Revenue impact has been remediated and no further outbound action is required.",
       analystNote: "No further follow-up is required.",
       conciseAnalystNote: "No further follow-up is required.",
+      workflowStatusLabel: row.workflowStatusLabel ? "Resolved" : row.workflowStatusLabel,
+      updatedAtRaw,
       notes: row.notes.includes("Case marked resolved from the overview.")
         ? row.notes
         : [...row.notes, "Case marked resolved from the overview."]
@@ -719,6 +1008,8 @@ export default function HomePage() {
   }
 
   function buildFollowUpRow(row: DashboardCallRow): DashboardCallRow {
+    const updatedAtRaw = new Date().toISOString();
+
     return {
       ...row,
       issue: "Estimated revenue leakage",
@@ -730,6 +1021,8 @@ export default function HomePage() {
       dueBy: row.dueBy === "Completed" ? "Next Business Day • 09:00" : row.dueBy,
       conciseAnalystNote: "Follow-up ownership has been assigned and outreach is still required.",
       analystNote: "Follow-up ownership has been assigned and outreach is still required.",
+      workflowStatusLabel: row.workflowStatusLabel ? "Follow-Up Sent" : row.workflowStatusLabel,
+      updatedAtRaw,
       recommendedAction:
         "Immediate outbound follow-up remains required. Ownership has been assigned and customer outreach should be completed within the active response window."
     };
@@ -798,6 +1091,14 @@ export default function HomePage() {
 
       <main>
         <DashboardHeader
+          title={
+            isServiceBusinessMode ? "Missed Call Recovery" : "Call Performance / Revenue Recovery"
+          }
+          description={
+            isServiceBusinessMode
+              ? "Operational view of missed inbound calls, follow-up activity, jobs at risk, and unresolved recovery cases that still need action."
+              : "Performance view of conversion failures, revenue exposure, follow-up delays, and the calls that need coaching or recovery attention first."
+          }
           selectedRange={selectedRange}
           summaryItems={summaryItems}
           onSelectRange={handleRangeChange}
@@ -811,33 +1112,74 @@ export default function HomePage() {
             </div>
           ) : null}
 
-          <PrimaryMetrics items={primaryMetrics} />
+          {isServiceBusinessMode ? (
+            <>
+              <PriorityCallbacksPanel
+                rows={servicePriorityRows}
+                selectedRange={selectedRange}
+                eyebrow="Service recovery queue"
+                title="Priority Callbacks"
+                description={`Missed inbound calls that still require follow-up action in ${getDateRangeLabel(
+                  selectedRange
+                ).toLowerCase()}.`}
+                emptyMessage="No missed inbound calls are currently waiting for callback action in this operating window."
+                onOpenRecord={handleRowOpen}
+                onAssignFollowUp={handleAssignFollowUp}
+                onMarkResolved={handleMarkResolved}
+              />
 
-          <PriorityCallbacksPanel
-            rows={priorityRows}
-            selectedRange={selectedRange}
-            onOpenRecord={handleRowOpen}
-            onAssignFollowUp={handleAssignFollowUp}
-            onMarkResolved={handleMarkResolved}
-          />
+              <PrimaryMetrics
+                items={primaryMetrics}
+                description="Missed-call volume, follow-up progress, and unresolved recovery work for the active operating window."
+              />
 
-          <section>
-            <MissedOpportunitiesChart
-              title="Missed revenue trend"
-              data={missedRevenueTrendData}
-              activeBucket={activeTrendBucket}
-              onBucketSelect={handleTrendBucketSelect}
-              subtitle="Track where missed revenue is accumulating over time and focus the operating view on a specific reporting period."
-              tooltipLabel="missed revenue"
-              valueFormatter={formatCurrency}
-            />
-          </section>
+              <CallsOverviewTable
+                title="Recovery cases"
+                description="Operational queue of missed inbound calls, follow-up activity, and unresolved recovery work for the selected window."
+                rows={serviceRecoveryRows}
+                emptyMessage={recoveryListEmptyMessage}
+                onOpenRecord={handleRowOpen}
+              />
+            </>
+          ) : (
+            <>
+              <PrimaryMetrics items={primaryMetrics} />
 
-          <CallsOverviewTable
-            rows={focusedRows}
-            emptyMessage={callListEmptyMessage}
-            onOpenRecord={handleRowOpen}
-          />
+              <PriorityCallbacksPanel
+                rows={priorityRows}
+                selectedRange={selectedRange}
+                eyebrow="Performance recovery queue"
+                title="Revenue Recovery Priorities"
+                description={`High-intent unconverted calls, follow-up delays, and missed-call recovery cases that need action in ${getDateRangeLabel(
+                  selectedRange
+                ).toLowerCase()}.`}
+                emptyMessage="No unresolved conversion failures or follow-up delays are active in this view."
+                onOpenRecord={handleRowOpen}
+                onAssignFollowUp={handleAssignFollowUp}
+                onMarkResolved={handleMarkResolved}
+              />
+
+              <section>
+                <MissedOpportunitiesChart
+                  title="Missed revenue trend"
+                  data={missedRevenueTrendData}
+                  activeBucket={activeTrendBucket}
+                  onBucketSelect={handleTrendBucketSelect}
+                  subtitle="Track where missed revenue is accumulating over time and focus the operating view on a specific reporting period."
+                  tooltipLabel="missed revenue"
+                  valueFormatter={formatCurrency}
+                />
+              </section>
+
+              <CallsOverviewTable
+                title="Call performance queue"
+                description="Analysed calls requiring revenue recovery, follow-up review, or manager coaching attention."
+                rows={focusedRows}
+                emptyMessage={callListEmptyMessage}
+                onOpenRecord={handleRowOpen}
+              />
+            </>
+          )}
         </div>
       </main>
     </>

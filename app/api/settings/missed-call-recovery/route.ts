@@ -6,6 +6,7 @@ import {
   updateMissedCallRecoverySettings,
   validateMissedCallRecoverySettings
 } from "@/lib/missed-call-recovery-settings";
+import type { BusinessVertical, SolutionMode } from "@/lib/solution-mode";
 
 export async function GET() {
   const user = await getAuthenticatedUser();
@@ -54,6 +55,8 @@ export async function POST(request: Request) {
     | {
         settings?: Partial<{
           businessName: string;
+          solutionMode: SolutionMode;
+          businessVertical: BusinessVertical;
           callbackNumber: string;
           defaultCallbackWindow: string;
           businessHours: string;

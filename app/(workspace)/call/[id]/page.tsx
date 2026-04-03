@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { CallRecordPage } from "@/components/call-record-page";
+import { getAuthenticatedUser } from "@/lib/auth/session";
 import { buildCallRecordView, type AnalysisRecord, type TranscriptRecord } from "@/lib/call-detail";
 import { getDemoCallRecordView } from "@/lib/demo-dashboard-data";
 import {
@@ -7,6 +8,8 @@ import {
   mapSupabaseCallToDashboardRow,
   type SupabaseCallRecord
 } from "@/lib/dashboard-calls";
+import { getMissedCallRecoverySettings } from "@/lib/missed-call-recovery-settings";
+import { defaultSolutionMode } from "@/lib/solution-mode";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export default async function CallPage({
@@ -15,10 +18,22 @@ export default async function CallPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const user = await getAuthenticatedUser();
+  let solutionMode = defaultSolutionMode;
+
+  if (user) {
+    try {
+      const settings = await getMissedCallRecoverySettings(user.id);
+      solutionMode = settings.solutionMode;
+    } catch (error) {
+      console.error("[call-page] Failed to load solution mode.", error);
+    }
+  }
+
   const demoRecord = getDemoCallRecordView(id);
 
   if (demoRecord) {
-    return <CallRecordPage initialRow={demoRecord.row} detail={demoRecord.detail} />;
+    return <CallRecordPage initialRow={demoRecord.row} detail={demoRecord.detail} solutionMode={solutionMode} />;
   }
 
   const supabase = createAdminClient();
@@ -58,5 +73,5 @@ export default async function CallPage({
   const analysis = analysisResult.error ? null : (analysisResult.data as AnalysisRecord | null);
   const { row, detail } = buildCallRecordView(callRecord, mappedRow, transcript, analysis);
 
-  return <CallRecordPage initialRow={row} detail={detail} />;
+  return <CallRecordPage initialRow={row} detail={detail} solutionMode={solutionMode} />;
 }
