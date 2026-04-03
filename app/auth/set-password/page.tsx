@@ -8,13 +8,33 @@ import { createClient } from "@/lib/supabase/client";
 
 type PasswordSetupState = "checking" | "ready" | "invalid";
 type PasswordSetupLinkType = "invite" | "recovery";
+type PasswordSetupSessionSnapshot = {
+  accessToken: string;
+  refreshToken: string;
+};
 
 function getPasswordSetupErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   const normalized = message.toLowerCase();
 
+  if (
+    normalized.includes("auth session missing") ||
+    normalized.includes("session not found") ||
+    normalized.includes("session expired")
+  ) {
+    return "Your password setup session expired. Please open the latest email link again.";
+  }
+
+  if (normalized.includes("reauthentication") || normalized.includes("nonce")) {
+    return "This password setup link needs a fresh verification email. Please request a new password setup link.";
+  }
+
   if (normalized.includes("same password")) {
     return "Please choose a new password that you have not used already.";
+  }
+
+  if (normalized.includes("weak password")) {
+    return "Please choose a stronger password and try again.";
   }
 
   if (normalized.includes("password should be at least")) {
@@ -93,6 +113,7 @@ export default function SetPasswordPage() {
   const [isPending, setIsPending] = useState(false);
   const [setupState, setSetupState] = useState<PasswordSetupState>("checking");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [sessionSnapshot, setSessionSnapshot] = useState<PasswordSetupSessionSnapshot | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -107,6 +128,20 @@ export default function SetPasswordPage() {
       console.warn("[set-password] Password setup link could not establish a session.", error);
       setSetupState("invalid");
       setErrorMessage(getInvalidPasswordSetupLinkMessage(error));
+    }
+
+    function markReady(accessToken: string, refreshToken: string) {
+      if (!isMounted) {
+        return;
+      }
+
+      setSessionSnapshot({
+        accessToken,
+        refreshToken
+      });
+      clearPasswordSetupAuthParams();
+      setSetupState("ready");
+      setErrorMessage(null);
     }
 
     async function resolveSession() {
@@ -162,8 +197,7 @@ export default function SetPasswordPage() {
         }
 
         if (data.session) {
-          clearPasswordSetupAuthParams();
-          setSetupState("ready");
+          markReady(data.session.access_token, data.session.refresh_token);
           return;
         }
 
@@ -181,8 +215,7 @@ export default function SetPasswordPage() {
             }
 
             if (retryData.session) {
-              clearPasswordSetupAuthParams();
-              setSetupState("ready");
+              markReady(retryData.session.access_token, retryData.session.refresh_token);
               return;
             }
 
@@ -207,8 +240,7 @@ export default function SetPasswordPage() {
       }
 
       if (session && (event === "SIGNED_IN" || event === "PASSWORD_RECOVERY" || event === "INITIAL_SESSION")) {
-        clearPasswordSetupAuthParams();
-        setSetupState("ready");
+        markReady(session.access_token, session.refresh_token);
       }
     });
 
@@ -243,11 +275,37 @@ export default function SetPasswordPage() {
 
     try {
       const supabase = createClient();
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error("[set-password] Failed to load session before password update.", sessionError);
+        setErrorMessage(getPasswordSetupErrorMessage(sessionError));
+        return;
+      }
+
+      if (!sessionData.session && sessionSnapshot) {
+        console.warn("[set-password] Session missing before password update. Restoring from setup snapshot.");
+        const { error: restoreError } = await supabase.auth.setSession({
+          access_token: sessionSnapshot.accessToken,
+          refresh_token: sessionSnapshot.refreshToken
+        });
+
+        if (restoreError) {
+          console.error("[set-password] Failed to restore session before password update.", restoreError);
+          setErrorMessage(getPasswordSetupErrorMessage(restoreError));
+          return;
+        }
+      } else if (!sessionData.session) {
+        setErrorMessage("Your password setup session expired. Please open the latest email link again.");
+        return;
+      }
+
       const { error } = await supabase.auth.updateUser({
         password
       });
 
       if (error) {
+        console.error("[set-password] Password update failed.", error);
         setErrorMessage(getPasswordSetupErrorMessage(error));
         return;
       }
@@ -255,6 +313,7 @@ export default function SetPasswordPage() {
       router.replace("/dashboard");
       router.refresh();
     } catch (error) {
+      console.error("[set-password] Password update request crashed.", error);
       setErrorMessage(getPasswordSetupErrorMessage(error));
     } finally {
       setIsPending(false);
