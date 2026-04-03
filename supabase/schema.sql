@@ -1,5 +1,19 @@
 create extension if not exists pgcrypto;
 
+create table if not exists public.business_memberships (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  business_id uuid not null,
+  business_name text not null,
+  solution_mode text not null check (
+    solution_mode in ('service_business_missed_call_recovery', 'call_performance_revenue_recovery')
+  ),
+  business_vertical text not null check (
+    business_vertical in ('hvac', 'plumbing', 'electrical', 'dental', 'cosmetic_clinic', 'legal_intake', 'call_centre', 'other')
+  ),
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
 create table if not exists public.calls (
   id uuid primary key default gen_random_uuid(),
   external_id text unique,
@@ -80,12 +94,25 @@ create table if not exists public.analysis (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+create index if not exists business_memberships_business_id_idx on public.business_memberships(business_id);
 create index if not exists calls_started_at_idx on public.calls(started_at desc);
 create index if not exists calls_status_idx on public.calls(status);
 create index if not exists transcripts_call_id_idx on public.transcripts(call_id);
 create index if not exists analysis_call_id_idx on public.analysis(call_id);
 create index if not exists analysis_status_idx on public.analysis(analysis_status);
 create index if not exists analysis_failure_type_idx on public.analysis(failure_type);
+
+alter table public.business_memberships enable row level security;
+
+grant select on public.business_memberships to authenticated;
+revoke insert, update, delete on public.business_memberships from authenticated, anon;
+
+drop policy if exists "Users can read their own business membership" on public.business_memberships;
+create policy "Users can read their own business membership"
+on public.business_memberships
+for select
+to authenticated
+using (auth.uid() = user_id);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -100,6 +127,12 @@ $$;
 drop trigger if exists set_calls_updated_at on public.calls;
 create trigger set_calls_updated_at
 before update on public.calls
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_business_memberships_updated_at on public.business_memberships;
+create trigger set_business_memberships_updated_at
+before update on public.business_memberships
 for each row
 execute function public.set_updated_at();
 

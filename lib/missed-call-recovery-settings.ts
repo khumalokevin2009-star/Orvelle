@@ -8,7 +8,13 @@ import {
   type BusinessVertical,
   type SolutionMode
 } from "@/lib/solution-mode";
-import { mergeBusinessAccountMetadata, readBusinessAccountFromUser } from "@/lib/business-account";
+import {
+  getBusinessAccountByUserId,
+  mergeBusinessAccountMetadata,
+  readBusinessAccountFromUser,
+  type BusinessAccount,
+  upsertBusinessAccountMembership
+} from "@/lib/business-account";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type MissedCallRecoverySettings = {
@@ -75,21 +81,26 @@ export function readMissedCallRecoverySettings(appMetadata: unknown) {
   return normalizeMissedCallRecoverySettings(getSettingsRecord(appMetadata));
 }
 
-export function readMissedCallRecoverySettingsForUser(user: {
-  id: string;
-  app_metadata?: unknown;
-}) {
+export function readMissedCallRecoverySettingsForUser(
+  user: {
+    id: string;
+    app_metadata?: unknown;
+  },
+  businessAccount?: BusinessAccount | null
+) {
   const settings = readMissedCallRecoverySettings(user.app_metadata);
-  const businessAccount = readBusinessAccountFromUser({
-    id: user.id,
-    app_metadata: user.app_metadata ?? null
-  });
+  const resolvedBusinessAccount =
+    businessAccount ??
+    readBusinessAccountFromUser({
+      id: user.id,
+      app_metadata: user.app_metadata ?? null
+    });
 
   return {
     ...settings,
-    businessName: businessAccount.businessName,
-    solutionMode: businessAccount.solutionMode,
-    businessVertical: businessAccount.businessVertical
+    businessName: resolvedBusinessAccount.businessName,
+    solutionMode: resolvedBusinessAccount.solutionMode,
+    businessVertical: resolvedBusinessAccount.businessVertical
   };
 }
 
@@ -119,10 +130,15 @@ export async function getMissedCallRecoverySettings(userId: string) {
     throw error;
   }
 
-  return readMissedCallRecoverySettingsForUser({
-    id: userId,
-    app_metadata: data.user?.app_metadata
-  });
+  const businessAccount = await getBusinessAccountByUserId(userId);
+
+  return readMissedCallRecoverySettingsForUser(
+    {
+      id: userId,
+      app_metadata: data.user?.app_metadata
+    },
+    businessAccount
+  );
 }
 
 export async function updateMissedCallRecoverySettings({
@@ -157,6 +173,7 @@ export async function updateMissedCallRecoverySettings({
     smsTemplate: nextSettings.smsTemplate,
     updatedAt: nextSettings.updatedAt
   };
+
   const metadataPayload = mergeBusinessAccountMetadata({
     existingAppMetadata,
     userId,
@@ -172,6 +189,13 @@ export async function updateMissedCallRecoverySettings({
   if (updateError) {
     throw updateError;
   }
+
+  await upsertBusinessAccountMembership({
+    userId,
+    businessName: nextSettings.businessName,
+    solutionMode: nextSettings.solutionMode,
+    businessVertical: nextSettings.businessVertical
+  });
 
   return nextSettings;
 }

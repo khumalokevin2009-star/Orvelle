@@ -1,0 +1,229 @@
+"use client";
+
+import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { LogoIcon } from "@/components/icons";
+import { createClient } from "@/lib/supabase/client";
+
+type PasswordSetupState = "checking" | "ready" | "invalid";
+
+function getPasswordSetupErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("same password")) {
+    return "Please choose a new password that you have not used already.";
+  }
+
+  if (normalized.includes("password should be at least")) {
+    return "Password must be at least 8 characters.";
+  }
+
+  return "Unable to complete password setup right now. Please try the email link again.";
+}
+
+export default function SetPasswordPage() {
+  const router = useRouter();
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isPending, setIsPending] = useState(false);
+  const [setupState, setSetupState] = useState<PasswordSetupState>("checking");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const supabase = createClient();
+
+    async function resolveSession() {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error) {
+        setSetupState("invalid");
+        setErrorMessage("This password setup link is invalid or has expired.");
+        return;
+      }
+
+      if (data.session) {
+        setSetupState("ready");
+        return;
+      }
+
+      window.setTimeout(async () => {
+        const { data: retryData } = await supabase.auth.getSession();
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (retryData.session) {
+          setSetupState("ready");
+          return;
+        }
+
+        setSetupState("invalid");
+        setErrorMessage("This password setup link is invalid or has expired.");
+      }, 700);
+    }
+
+    resolveSession();
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isMounted) {
+        return;
+      }
+
+      if (session) {
+        setSetupState("ready");
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (isPending || setupState !== "ready") {
+      return;
+    }
+
+    if (password.length < 8) {
+      setErrorMessage("Password must be at least 8 characters.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMessage("Passwords do not match.");
+      return;
+    }
+
+    setIsPending(true);
+    setErrorMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.updateUser({
+        password
+      });
+
+      if (error) {
+        setErrorMessage(getPasswordSetupErrorMessage(error));
+        return;
+      }
+
+      router.replace("/dashboard");
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(getPasswordSetupErrorMessage(error));
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  return (
+    <main className="relative min-h-screen bg-[#F3F4F6] px-4 py-8 sm:px-6 lg:px-8">
+      <div className="absolute left-4 top-4 z-10 sm:left-6 sm:top-6 lg:left-8 lg:top-8">
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-2 rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3 py-2 text-[14px] font-medium text-[#6B7280] no-underline shadow-[0_1px_2px_rgba(17,24,39,0.04)] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:text-[#111827] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+        >
+          <span aria-hidden="true">←</span>
+          <span>Back to sign in</span>
+        </Link>
+      </div>
+
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-[1180px] items-center justify-center">
+        <div className="w-full max-w-[480px]">
+          <section className="surface-primary w-full px-8 py-9 shadow-[0_18px_55px_rgba(17,24,39,0.08)] sm:px-10 sm:py-11">
+            <div className="surface-secondary inline-flex h-14 w-14 items-center justify-center">
+              <LogoIcon className="h-10 w-10" />
+            </div>
+
+            <div className="mt-7">
+              <div className="type-label-text text-[12px]">Invite-Only Access</div>
+              <h1 className="type-page-title text-[32px]">Set Your Password</h1>
+              <p className="type-body-text mt-3 text-[15px]">
+                Finish setting up your Orvelle access by choosing a password for your invited account.
+              </p>
+            </div>
+
+            <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+              <label className="block">
+                <span className="type-label-text text-[13px]">New password</span>
+                <input
+                  type="password"
+                  name="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Choose a secure password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  disabled={setupState !== "ready" || isPending}
+                  className="mt-2 h-12 w-full rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-[15px] text-[#111827] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB] disabled:cursor-not-allowed disabled:bg-[#F9FAFB]"
+                />
+              </label>
+
+              <label className="block">
+                <span className="type-label-text text-[13px]">Confirm password</span>
+                <input
+                  type="password"
+                  name="confirmPassword"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  placeholder="Re-enter your password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  disabled={setupState !== "ready" || isPending}
+                  className="mt-2 h-12 w-full rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 text-[15px] text-[#111827] outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB] disabled:cursor-not-allowed disabled:bg-[#F9FAFB]"
+                />
+              </label>
+
+              {setupState === "checking" ? (
+                <div className="rounded-[12px] border border-[#DBEAFE] bg-[#EFF6FF] px-4 py-3 text-[14px] text-[#1D4ED8]">
+                  Verifying your invite link and preparing password setup.
+                </div>
+              ) : null}
+
+              {errorMessage ? (
+                <div
+                  aria-live="polite"
+                  className="rounded-[12px] border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-[14px] text-[#B91C1C]"
+                >
+                  {errorMessage}
+                </div>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={setupState !== "ready" || isPending}
+                className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[15px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
+              >
+                {isPending ? "Saving Password..." : "Set Password"}
+              </button>
+            </form>
+
+            <div className="surface-secondary mt-6 px-4 py-4">
+              <div className="type-label-text text-[13px]">Access Notice</div>
+              <p className="type-body-text mt-2 text-[14px]">
+                Accounts are created by invitation only. If your link has expired, contact Orvelle support or the
+                person who invited you.
+              </p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
