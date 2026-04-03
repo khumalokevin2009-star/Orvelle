@@ -7,6 +7,7 @@ import { LogoIcon } from "@/components/icons";
 import { createClient } from "@/lib/supabase/client";
 
 type PasswordSetupState = "checking" | "ready" | "invalid";
+type PasswordSetupLinkType = "invite" | "recovery";
 
 function getPasswordSetupErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -23,6 +24,68 @@ function getPasswordSetupErrorMessage(error: unknown) {
   return "Unable to complete password setup right now. Please try the email link again.";
 }
 
+function getInvalidPasswordSetupLinkMessage(error?: unknown) {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("expired") || normalized.includes("invalid")) {
+    return "This password setup link is invalid or has expired.";
+  }
+
+  if (normalized.includes("otp") || normalized.includes("token") || normalized.includes("code")) {
+    return "We couldn't verify this password setup link. It may have expired or already been used.";
+  }
+
+  return "This password setup link is invalid or has expired.";
+}
+
+function normalizePasswordSetupLinkType(value: string | null): PasswordSetupLinkType | null {
+  if (value === "invite" || value === "recovery") {
+    return value;
+  }
+
+  return null;
+}
+
+function readPasswordSetupAuthParams() {
+  const url = new URL(window.location.href);
+  const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+
+  const code = url.searchParams.get("code");
+  const tokenHash = url.searchParams.get("token_hash");
+  const type =
+    normalizePasswordSetupLinkType(url.searchParams.get("type")) ||
+    normalizePasswordSetupLinkType(hashParams.get("type"));
+  const accessToken = hashParams.get("access_token");
+  const refreshToken = hashParams.get("refresh_token");
+  const authError = url.searchParams.get("error") || hashParams.get("error");
+  const authErrorDescription =
+    url.searchParams.get("error_description") || hashParams.get("error_description");
+
+  return {
+    code,
+    tokenHash,
+    type,
+    accessToken,
+    refreshToken,
+    authError,
+    authErrorDescription,
+    hasAuthParams:
+      Boolean(code) ||
+      Boolean(tokenHash) ||
+      Boolean(accessToken && refreshToken) ||
+      Boolean(authError) ||
+      Boolean(authErrorDescription)
+  };
+}
+
+function clearPasswordSetupAuthParams() {
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.search = "";
+  cleanUrl.hash = "";
+  window.history.replaceState({}, document.title, cleanUrl.toString());
+}
+
 export default function SetPasswordPage() {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -33,59 +96,127 @@ export default function SetPasswordPage() {
 
   useEffect(() => {
     let isMounted = true;
+    let retrySessionTimeout: number | undefined;
     const supabase = createClient();
 
-    async function resolveSession() {
-      const { data, error } = await supabase.auth.getSession();
-
+    function markInvalid(error?: unknown) {
       if (!isMounted) {
         return;
       }
 
-      if (error) {
-        setSetupState("invalid");
-        setErrorMessage("This password setup link is invalid or has expired.");
-        return;
-      }
+      console.warn("[set-password] Password setup link could not establish a session.", error);
+      setSetupState("invalid");
+      setErrorMessage(getInvalidPasswordSetupLinkMessage(error));
+    }
 
-      if (data.session) {
-        setSetupState("ready");
-        return;
-      }
+    async function resolveSession() {
+      try {
+        const authParams = readPasswordSetupAuthParams();
 
-      window.setTimeout(async () => {
-        const { data: retryData } = await supabase.auth.getSession();
+        if (authParams.authError || authParams.authErrorDescription) {
+          markInvalid(authParams.authErrorDescription || authParams.authError);
+          return;
+        }
+
+        if (authParams.code) {
+          console.info("[set-password] Exchanging Supabase auth code for password setup.");
+          const { error } = await supabase.auth.exchangeCodeForSession(authParams.code);
+
+          if (error) {
+            markInvalid(error);
+            return;
+          }
+        } else if (authParams.tokenHash && authParams.type) {
+          console.info("[set-password] Verifying Supabase OTP token for password setup.");
+          const { error } = await supabase.auth.verifyOtp({
+            token_hash: authParams.tokenHash,
+            type: authParams.type
+          });
+
+          if (error) {
+            markInvalid(error);
+            return;
+          }
+        } else if (authParams.accessToken && authParams.refreshToken) {
+          console.info("[set-password] Restoring Supabase session from password setup tokens.");
+          const { error } = await supabase.auth.setSession({
+            access_token: authParams.accessToken,
+            refresh_token: authParams.refreshToken
+          });
+
+          if (error) {
+            markInvalid(error);
+            return;
+          }
+        }
+
+        const { data, error } = await supabase.auth.getSession();
 
         if (!isMounted) {
           return;
         }
 
-        if (retryData.session) {
+        if (error) {
+          markInvalid(error);
+          return;
+        }
+
+        if (data.session) {
+          clearPasswordSetupAuthParams();
           setSetupState("ready");
           return;
         }
 
-        setSetupState("invalid");
-        setErrorMessage("This password setup link is invalid or has expired.");
-      }, 700);
+        if (authParams.hasAuthParams) {
+          retrySessionTimeout = window.setTimeout(async () => {
+            const { data: retryData, error: retryError } = await supabase.auth.getSession();
+
+            if (!isMounted) {
+              return;
+            }
+
+            if (retryError) {
+              markInvalid(retryError);
+              return;
+            }
+
+            if (retryData.session) {
+              clearPasswordSetupAuthParams();
+              setSetupState("ready");
+              return;
+            }
+
+            markInvalid();
+          }, 1500);
+          return;
+        }
+
+        markInvalid();
+      } catch (error) {
+        markInvalid(error);
+      }
     }
 
     resolveSession();
 
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) {
         return;
       }
 
-      if (session) {
+      if (session && (event === "SIGNED_IN" || event === "PASSWORD_RECOVERY" || event === "INITIAL_SESSION")) {
+        clearPasswordSetupAuthParams();
         setSetupState("ready");
       }
     });
 
     return () => {
       isMounted = false;
+      if (retrySessionTimeout) {
+        window.clearTimeout(retrySessionTimeout);
+      }
       subscription.unsubscribe();
     };
   }, []);

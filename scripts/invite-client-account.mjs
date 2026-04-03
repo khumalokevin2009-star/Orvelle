@@ -67,6 +67,18 @@ function deriveContactName(email, explicitName) {
     .join(" ");
 }
 
+function normalizeAppUrl(input) {
+  const url = new URL(input);
+  url.search = "";
+  url.hash = "";
+
+  if (!url.pathname.endsWith("/")) {
+    url.pathname = `${url.pathname}/`;
+  }
+
+  return url.toString();
+}
+
 function normalizeSolutionMode(input) {
   if (solutionModeValues.has(input)) {
     return input;
@@ -170,7 +182,7 @@ async function findUserByEmail(supabase, email) {
 }
 
 function buildPasswordSetupRedirect(appUrl) {
-  const redirectUrl = new URL("/auth/set-password", appUrl);
+  const redirectUrl = new URL("/auth/set-password", normalizeAppUrl(appUrl));
   return redirectUrl.toString();
 }
 
