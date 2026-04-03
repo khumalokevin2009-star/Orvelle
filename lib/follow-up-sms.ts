@@ -245,7 +245,16 @@ async function sendTwilioSms({
 }): Promise<FollowUpSendResult> {
   const env = getTwilioMessagingEnv();
 
+  console.info("[follow-up-sms] SMS send function called.", {
+    destinationPhone: to,
+    usingMessagingServiceSid: Boolean(env?.messagingServiceSid),
+    usingFromNumber: Boolean(env?.fromNumber)
+  });
+
   if (!env) {
+    console.warn("[follow-up-sms] Outbound message request failed because SMS is not configured.", {
+      destinationPhone: to
+    });
     return {
       ok: false,
       status: 503,
@@ -271,6 +280,10 @@ async function sendTwilioSms({
   let response: Response;
 
   try {
+    console.info("[follow-up-sms] Outbound Twilio message request started.", {
+      destinationPhone: to
+    });
+
     response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${env.accountSid}/Messages.json`,
       {
@@ -283,6 +296,11 @@ async function sendTwilioSms({
       }
     );
   } catch (error) {
+    console.error("[follow-up-sms] Outbound Twilio message request failed.", {
+      destinationPhone: to,
+      message: error instanceof Error ? error.message : "Unknown error"
+    });
+
     return {
       ok: false,
       status: 502,
@@ -303,6 +321,15 @@ async function sendTwilioSms({
     | null;
 
   if (!response.ok) {
+    console.error("[follow-up-sms] Outbound Twilio message request failed.", {
+      destinationPhone: to,
+      status: response.status || 502,
+      message:
+        payload?.message ||
+        payload?.error_message ||
+        "Twilio could not send the follow-up message right now."
+    });
+
     return {
       ok: false,
       status: response.status || 502,
@@ -313,6 +340,11 @@ async function sendTwilioSms({
       reason: "provider_error"
     };
   }
+
+  console.info("[follow-up-sms] Outbound Twilio message request succeeded.", {
+    destinationPhone: to,
+    sid: payload?.sid ?? null
+  });
 
   return {
     ok: true,
@@ -342,6 +374,17 @@ export async function sendFollowUpForCall({
   const smsBody = settings ? buildFollowUpSmsBodyFromSettings({ row, settings }) : buildFollowUpSmsBody(row);
   const normalizedPhoneNumber = normalizeSmsDestination(row.phone);
   const templateHash = hashSmsBody(smsBody);
+
+  console.info("[follow-up-sms] Follow-up send requested.", {
+    source,
+    callId: row.id,
+    caller: row.caller,
+    originalInboundCallerPhone: row.phone,
+    normalizedDestinationPhone: normalizedPhoneNumber,
+    forceMock,
+    enforceCooldown,
+    hasUserId: Boolean(userId)
+  });
 
   if (forceMock) {
     if (userId) {
@@ -373,6 +416,10 @@ export async function sendFollowUpForCall({
   }
 
   if (!row.phone || row.phone === "Phone number placeholder") {
+    console.warn("[follow-up-sms] Follow-up send skipped because the original inbound caller number is missing.", {
+      source,
+      callId: row.id
+    });
     return {
       ok: false,
       status: 400,
@@ -382,6 +429,11 @@ export async function sendFollowUpForCall({
   }
 
   if (!normalizedPhoneNumber) {
+    console.warn("[follow-up-sms] Follow-up send skipped because the original inbound caller number is invalid.", {
+      source,
+      callId: row.id,
+      originalInboundCallerPhone: row.phone
+    });
     return {
       ok: false,
       status: 400,
@@ -400,6 +452,12 @@ export async function sendFollowUpForCall({
       });
 
       if (recentAttempt) {
+        console.info("[follow-up-sms] Follow-up send skipped because cooldown is active.", {
+          source,
+          callId: row.id,
+          originalInboundCallerPhone: row.phone,
+          normalizedDestinationPhone: normalizedPhoneNumber
+        });
         return {
           ok: false,
           status: 409,

@@ -28,6 +28,13 @@ export async function POST(
   const missedCallRecoverySettings = await getMissedCallRecoverySettings(user.id).catch(() => null);
 
   if (demoRow) {
+    console.info("[follow-up] Manual SMS branch entered for demo recovery case.", {
+      userId: user.id,
+      callId: demoRow.id,
+      caller: demoRow.caller,
+      phone: demoRow.phone
+    });
+
     const result = await sendFollowUpForCall({
       row: demoRow,
       forceMock: true,
@@ -94,6 +101,14 @@ export async function POST(
     callResult.data as SupabaseCallRecord,
     analysisResult.error ? null : (analysisResult.data as SupabaseAnalysisRecord | null)
   );
+
+  console.info("[follow-up] Manual SMS branch entered for live recovery case.", {
+    userId: user.id,
+    callId: row.id,
+    caller: row.caller,
+    phone: row.phone
+  });
+
   const result = await sendFollowUpForCall({
     row,
     settings: missedCallRecoverySettings ?? undefined,
