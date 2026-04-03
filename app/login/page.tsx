@@ -18,6 +18,15 @@ function getLoginErrorMessage(error: unknown) {
   }
 
   if (
+    normalized.includes("authentication service is temporarily unavailable") ||
+    normalized.includes("fetch failed") ||
+    normalized.includes("failed to fetch") ||
+    normalized.includes("network")
+  ) {
+    return "Authentication service is temporarily unavailable. Please try again shortly.";
+  }
+
+  if (
     normalized.includes("invalid login credentials") ||
     normalized.includes("invalid email or password")
   ) {
@@ -72,22 +81,46 @@ export default function LoginPage() {
         })
       });
 
-      const payload = (await response.json().catch(() => null)) as
+      const responseText = await response.text();
+      const payload = (responseText
+        ? (() => {
+            try {
+              return JSON.parse(responseText);
+            } catch {
+              return null;
+            }
+          })()
+        : null) as
         | {
             ok?: boolean;
             message?: string;
+            code?: string;
             redirectTo?: string;
           }
         | null;
 
       if (!response.ok || !payload?.ok) {
-        setErrorMessage(getLoginErrorMessage(payload?.message || "Unable to sign in right now."));
+        const nextErrorMessage =
+          payload?.message?.trim() ||
+          responseText.trim() ||
+          `Login request failed with status ${response.status}.`;
+
+        console.warn("[login-page] Login request failed.", {
+          status: response.status,
+          code: payload?.code,
+          message: nextErrorMessage
+        });
+
+        setErrorMessage(getLoginErrorMessage(nextErrorMessage));
         return;
       }
 
       router.replace(payload.redirectTo || "/dashboard");
       router.refresh();
     } catch (error) {
+      console.error("[login-page] Login request crashed in the browser.", {
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
       setErrorMessage(getLoginErrorMessage(error));
     } finally {
       setIsPending(false);
