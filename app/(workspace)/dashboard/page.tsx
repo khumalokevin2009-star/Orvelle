@@ -16,13 +16,9 @@ import {
   isWithinDateRange,
   type DashboardCallRow
 } from "@/lib/dashboard-calls";
-import {
-  demoDashboardMetricSnapshot,
-  demoMissedCallRecoveryRows,
-  demoTrendByRange
-} from "@/lib/demo-dashboard-data";
+import { demoMissedCallRecoveryRows, demoTrendByRange } from "@/lib/demo-dashboard-data";
+import { useSolutionMode } from "@/components/solution-mode-provider";
 import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
-import { defaultSolutionMode, type SolutionMode } from "@/lib/solution-mode";
 
 type PrimaryMetricItem = {
   label: string;
@@ -455,11 +451,11 @@ export default function HomePage() {
   const [selectedRange, setSelectedRange] = useState<DateRangeKey>("30d");
   const [activeTrendBucket, setActiveTrendBucket] = useState<string | null>(null);
   const [rowsState, setRowsState] = useState<DashboardCallRow[]>([]);
-  const [solutionMode, setSolutionMode] = useState<SolutionMode>(defaultSolutionMode);
   const [dashboardMode, setDashboardMode] = useState<"live" | "demo">("live");
   const [dataState, setDataState] = useState<"loading" | "ready" | "error">("loading");
   const [dataError, setDataError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const solutionMode = useSolutionMode();
 
   const isServiceBusinessMode = solutionMode === "service_business_missed_call_recovery";
   const copy = getSolutionModeCopy(solutionMode);
@@ -912,45 +908,6 @@ export default function HomePage() {
     }
 
     void loadCalls();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    async function loadSolutionModeSetting() {
-      try {
-        const response = await fetch("/api/settings/missed-call-recovery", {
-          method: "GET",
-          cache: "no-store"
-        });
-
-        const payload = (await response.json().catch(() => null)) as
-          | {
-              settings?: {
-                solutionMode?: SolutionMode;
-              };
-            }
-          | null;
-
-        if (isCancelled) {
-          return;
-        }
-
-        if (!response.ok || !payload?.settings?.solutionMode) {
-          return;
-        }
-
-        setSolutionMode(payload.settings.solutionMode);
-      } catch (error) {
-        console.error("[dashboard] Failed to load solution mode setting.", error);
-      }
-    }
-
-    void loadSolutionModeSetting();
 
     return () => {
       isCancelled = true;

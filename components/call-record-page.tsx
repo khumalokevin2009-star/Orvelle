@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { useSolutionMode } from "@/components/solution-mode-provider";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
 import type { CallRecordDetail, TranscriptEntry } from "@/lib/call-detail";
@@ -210,7 +211,8 @@ export function CallRecordPage({
   solutionMode?: SolutionMode;
 }) {
   const router = useRouter();
-  const copy = getSolutionModeCopy(solutionMode);
+  const resolvedSolutionMode = useSolutionMode(solutionMode);
+  const copy = getSolutionModeCopy(resolvedSolutionMode);
   const [row, setRow] = useState(() => mergeMissedCallWorkflowRow(initialRow));
   const [detailState, setDetailState] = useState(() => normalizeDetailState(detail));
   const [notice, setNotice] = useState<string | null>(null);

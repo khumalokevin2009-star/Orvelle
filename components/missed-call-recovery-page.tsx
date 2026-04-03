@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSolutionMode } from "@/components/solution-mode-provider";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { demoMissedCallRecoveryRows } from "@/lib/demo-dashboard-data";
 import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
@@ -117,7 +118,9 @@ export function MissedCallRecoveryPage({
   solutionMode?: SolutionMode;
 }) {
   const router = useRouter();
-  const copy = getSolutionModeCopy(solutionMode);
+  const resolvedSolutionMode = useSolutionMode(solutionMode);
+  const copy = getSolutionModeCopy(resolvedSolutionMode);
+  const isServiceBusinessMode = resolvedSolutionMode === "service_business_missed_call_recovery";
   const [rows, setRows] = useState(() => mergeMissedCallWorkflowRows(demoMissedCallRecoveryRows));
   const [selectedCallId, setSelectedCallId] = useState(demoMissedCallRecoveryRows[0]?.id ?? null);
   const [activityMessage, setActivityMessage] = useState<string | null>(null);
@@ -380,13 +383,9 @@ export function MissedCallRecoveryPage({
       <section className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label={copy.recoveryPage.summaryPrimaryLabel}
-          value={
-            solutionMode === "service_business_missed_call_recovery"
-              ? String(summary.missedCallsToday)
-              : String(summary.awaitingFollowUp)
-          }
+          value={isServiceBusinessMode ? String(summary.missedCallsToday) : String(summary.awaitingFollowUp)}
           detail={
-            solutionMode === "service_business_missed_call_recovery"
+            isServiceBusinessMode
               ? "Inbound calls captured in today’s recovery queue."
               : "Calls with unresolved conversion or recovery failures requiring review."
           }
@@ -399,9 +398,7 @@ export function MissedCallRecoveryPage({
         <SummaryCard
           label={copy.recoveryPage.summaryRiskLabel}
           value={
-            solutionMode === "service_business_missed_call_recovery"
-              ? String(summary.awaitingFollowUp)
-              : formatCurrency(summary.revenueAtRisk)
+            isServiceBusinessMode ? String(summary.awaitingFollowUp) : formatCurrency(summary.revenueAtRisk)
           }
           detail={copy.recoveryPage.summaryRiskDetail}
         />
