@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/auth/session";
+import { getCurrentBusinessAccount } from "@/lib/business-account";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { transcribeAudioAsset } from "@/lib/transcription/service";
 
@@ -86,9 +86,9 @@ export async function POST(
   }
 ) {
   const { id } = await context.params;
-  const user = await getAuthenticatedUser();
+  const businessAccount = await getCurrentBusinessAccount();
 
-  if (!user) {
+  if (!businessAccount) {
     return NextResponse.json(
       {
         message: "Authentication required."
@@ -115,6 +115,7 @@ export async function POST(
     .from("calls")
     .select("id, caller_name, audio_url, recording_filename")
     .eq("id", id)
+    .eq("business_id", businessAccount.businessId)
     .maybeSingle();
 
   if (callError) {

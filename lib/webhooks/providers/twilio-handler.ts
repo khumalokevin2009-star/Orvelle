@@ -52,12 +52,21 @@ function getRecordingFileName(recordingUrl?: string) {
   return lastSegment || null;
 }
 
-async function findExistingCall(supabase: SupabaseAdminClient, externalCallId: string) {
-  const { data, error } = await supabase
+async function findExistingCall(
+  supabase: SupabaseAdminClient,
+  externalCallId: string,
+  businessId?: string | null
+) {
+  let query = supabase
     .from("calls")
     .select("id, audio_url, recording_filename, started_at, ended_at, caller_phone, source_system, status")
-    .eq("external_id", externalCallId)
-    .maybeSingle();
+    .eq("external_id", externalCallId);
+
+  if (businessId?.trim()) {
+    query = query.eq("business_id", businessId.trim());
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
     throw error;
@@ -79,10 +88,12 @@ async function findExistingCall(supabase: SupabaseAdminClient, externalCallId: s
 
 async function insertTwilioCall(
   supabase: SupabaseAdminClient,
-  parsedWebhook: ParsedTwilioWebhookResult
+  parsedWebhook: ParsedTwilioWebhookResult,
+  businessId?: string | null
 ) {
   const ingestedCall = await ingestCall(parsedWebhook.payload, {
     supabase,
+    businessId,
     callerName: parsedWebhook.payload.phone_number,
     recordingFileName: getRecordingFileName(parsedWebhook.payload.recording_url)
   });
@@ -96,9 +107,14 @@ async function insertTwilioCall(
 
 async function handleInboundVoiceRequest(
   supabase: SupabaseAdminClient,
-  parsedWebhook: ParsedTwilioWebhookResult
+  parsedWebhook: ParsedTwilioWebhookResult,
+  businessId?: string | null
 ): Promise<IngestionResult> {
-  const existingCall = await findExistingCall(supabase, parsedWebhook.payload.external_call_id);
+  const existingCall = await findExistingCall(
+    supabase,
+    parsedWebhook.payload.external_call_id,
+    businessId
+  );
 
   if (existingCall?.id) {
     return {
@@ -112,7 +128,7 @@ async function handleInboundVoiceRequest(
     };
   }
 
-  const callId = await insertTwilioCall(supabase, parsedWebhook);
+  const callId = await insertTwilioCall(supabase, parsedWebhook, businessId);
 
   return {
     status: 201,
@@ -126,12 +142,17 @@ async function handleInboundVoiceRequest(
 
 async function handleCallCompleted(
   supabase: SupabaseAdminClient,
-  parsedWebhook: ParsedTwilioWebhookResult
+  parsedWebhook: ParsedTwilioWebhookResult,
+  businessId?: string | null
 ): Promise<IngestionResult> {
-  const existingCall = await findExistingCall(supabase, parsedWebhook.payload.external_call_id);
+  const existingCall = await findExistingCall(
+    supabase,
+    parsedWebhook.payload.external_call_id,
+    businessId
+  );
 
   if (!existingCall?.id) {
-    const callId = await insertTwilioCall(supabase, parsedWebhook);
+    const callId = await insertTwilioCall(supabase, parsedWebhook, businessId);
 
     return {
       status: 201,
@@ -167,7 +188,7 @@ async function handleCallCompleted(
     };
   }
 
-  const { error } = await supabase
+  let completedCallUpdate = supabase
     .from("calls")
     .update({
       caller_phone: parsedWebhook.payload.phone_number,
@@ -177,6 +198,12 @@ async function handleCallCompleted(
       status: nextStatus
     })
     .eq("id", existingCall.id);
+
+  if (businessId?.trim()) {
+    completedCallUpdate = completedCallUpdate.eq("business_id", businessId.trim());
+  }
+
+  const { error } = await completedCallUpdate;
 
   if (error) {
     throw error;
@@ -195,9 +222,14 @@ async function handleCallCompleted(
 
 async function handleRecordingCompleted(
   supabase: SupabaseAdminClient,
-  parsedWebhook: ParsedTwilioWebhookResult
+  parsedWebhook: ParsedTwilioWebhookResult,
+  businessId?: string | null
 ): Promise<IngestionResult> {
-  const existingCall = await findExistingCall(supabase, parsedWebhook.payload.external_call_id);
+  const existingCall = await findExistingCall(
+    supabase,
+    parsedWebhook.payload.external_call_id,
+    businessId
+  );
   const recordingUrl = parsedWebhook.payload.recording_url ?? null;
   const recordingFileName = getRecordingFileName(recordingUrl ?? undefined);
 
@@ -216,7 +248,7 @@ async function handleRecordingCompleted(
   }
 
   if (!existingCall?.id) {
-    const callId = await insertTwilioCall(supabase, parsedWebhook);
+    const callId = await insertTwilioCall(supabase, parsedWebhook, businessId);
 
     return {
       status: 201,
@@ -249,7 +281,7 @@ async function handleRecordingCompleted(
   const endedAt =
     durationSeconds > 0 ? new Date(new Date(startedAt).getTime() + durationSeconds * 1000).toISOString() : null;
 
-  const { error } = await supabase
+  let recordingUpdate = supabase
     .from("calls")
     .update({
       caller_phone: existingCall.caller_phone ?? parsedWebhook.payload.phone_number,
@@ -261,6 +293,12 @@ async function handleRecordingCompleted(
       status: parsedWebhook.payload.answered ? "under_review" : "action_required"
     })
     .eq("id", existingCall.id);
+
+  if (businessId?.trim()) {
+    recordingUpdate = recordingUpdate.eq("business_id", businessId.trim());
+  }
+
+  const { error } = await recordingUpdate;
 
   if (error) {
     throw error;
@@ -352,19 +390,21 @@ export const twilioWebhookHandler = {
   },
   async ingest({
     supabase,
-    parsedWebhook
+    parsedWebhook,
+    businessId
   }: {
     supabase: SupabaseAdminClient;
     parsedWebhook: ParsedTwilioWebhookResult;
+    businessId?: string | null;
   }): Promise<IngestionResult> {
     if (parsedWebhook.metadata.eventType === "voice_inbound") {
-      return handleInboundVoiceRequest(supabase, parsedWebhook);
+      return handleInboundVoiceRequest(supabase, parsedWebhook, businessId);
     }
 
     if (parsedWebhook.metadata.eventType === "recording_completed") {
-      return handleRecordingCompleted(supabase, parsedWebhook);
+      return handleRecordingCompleted(supabase, parsedWebhook, businessId);
     }
 
-    return handleCallCompleted(supabase, parsedWebhook);
+    return handleCallCompleted(supabase, parsedWebhook, businessId);
   }
 };

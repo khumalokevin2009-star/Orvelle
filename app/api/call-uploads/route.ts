@@ -1,5 +1,5 @@
 import { after, NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/auth/session";
+import { getCurrentBusinessAccount } from "@/lib/business-account";
 import { recordMonitoringEvent } from "@/lib/integrations/monitoring";
 import { ingestCall } from "@/lib/call-ingestion";
 import { processCallAfterIngestion } from "@/lib/call-processing";
@@ -205,7 +205,8 @@ async function handlePrepareUploads(
 async function handleFinalizeUploads(
   supabase: ReturnType<typeof createAdminClient>,
   uploads: FinalizeUploadFile[],
-  userId: string
+  userId: string,
+  businessId: string
 ) {
   const completedCallIds: string[] = [];
   const results = await Promise.all(
@@ -233,6 +234,7 @@ async function handleFinalizeUploads(
         const ingestedCall = await ingestCall(providerPayload, {
           supabase,
           userId,
+          businessId,
           callerName: defaultCallerName,
           assignedOwner: defaultAssignedOwner,
           recordingFileName: upload.fileName
@@ -350,9 +352,9 @@ async function handleFinalizeUploads(
 }
 
 export async function POST(request: Request) {
-  const user = await getAuthenticatedUser();
+  const businessAccount = await getCurrentBusinessAccount();
 
-  if (!user) {
+  if (!businessAccount) {
     return NextResponse.json(
       {
         message: "Authentication required.",
@@ -471,7 +473,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return handleFinalizeUploads(supabase, uploads, user.id);
+    return handleFinalizeUploads(supabase, uploads, businessAccount.userId, businessAccount.businessId);
   }
 
   return NextResponse.json(

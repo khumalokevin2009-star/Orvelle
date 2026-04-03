@@ -6,14 +6,14 @@ import {
   type SupabaseAnalysisRecord,
   type SupabaseCallRecord
 } from "@/lib/dashboard-calls";
-import { getAuthenticatedUser } from "@/lib/auth/session";
+import { getCurrentBusinessAccount } from "@/lib/business-account";
 import { demoDashboardRows, shouldUseDemoDashboardData } from "@/lib/demo-dashboard-data";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET() {
-  const user = await getAuthenticatedUser();
+  const businessAccount = await getCurrentBusinessAccount();
 
-  if (!user) {
+  if (!businessAccount) {
     return NextResponse.json(
       {
         message: "Authentication required."
@@ -41,13 +41,11 @@ export async function GET() {
     );
   }
 
-  const [{ data: calls, error: callsError }, { data: analyses, error: analysesError }] = await Promise.all([
-    supabase
-      .from("calls")
-      .select(callsSelectFields)
-      .order("started_at", { ascending: false }),
-    supabase.from("analysis").select(analysisSelectFields)
-  ]);
+  const { data: calls, error: callsError } = await supabase
+    .from("calls")
+    .select(callsSelectFields)
+    .eq("business_id", businessAccount.businessId)
+    .order("started_at", { ascending: false });
 
   if (callsError) {
     console.error("[dashboard-calls] Supabase calls query failed.", callsError);
@@ -61,28 +59,41 @@ export async function GET() {
     );
   }
 
-  if (analysesError) {
-    console.error("[dashboard-calls] Supabase analysis query failed.", analysesError);
+  const callIds = (calls ?? []).map((call) => (call as SupabaseCallRecord).id);
+  let analyses: SupabaseAnalysisRecord[] = [];
 
-    return NextResponse.json(
-      {
-        message: analysesError.message || "Unable to load call analysis records from Supabase.",
-        rows: []
-      },
-      { status: 500 }
-    );
+  if (callIds.length > 0) {
+    const { data: analysisData, error: analysesError } = await supabase
+      .from("analysis")
+      .select(analysisSelectFields)
+      .in("call_id", callIds);
+
+    if (analysesError) {
+      console.error("[dashboard-calls] Supabase analysis query failed.", analysesError);
+
+      return NextResponse.json(
+        {
+          message: analysesError.message || "Unable to load call analysis records from Supabase.",
+          rows: []
+        },
+        { status: 500 }
+      );
+    }
+
+    analyses = (analysisData as SupabaseAnalysisRecord[] | null) ?? [];
   }
 
   const analysisByCallId = new Map(
-    (analyses ?? []).map((analysis) => {
+    analyses.map((analysis) => {
       const record = analysis as SupabaseAnalysisRecord;
       return [record.call_id, record] as const;
     })
   );
 
   console.info("[dashboard-calls] Query completed.", {
+    businessId: businessAccount.businessId,
     callsReturned: calls?.length ?? 0,
-    analysesReturned: analyses?.length ?? 0
+    analysesReturned: analyses.length
   });
 
   if ((calls?.length ?? 0) === 0) {

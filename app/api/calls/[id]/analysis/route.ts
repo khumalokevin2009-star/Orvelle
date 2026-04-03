@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/auth/session";
+import { getCurrentBusinessAccount } from "@/lib/business-account";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { analyzeTranscript } from "@/lib/analysis/service";
 import { buildCallRecordView, type AnalysisRecord, type TranscriptRecord } from "@/lib/call-detail";
@@ -23,9 +23,9 @@ export async function POST(
   }
 ) {
   const { id } = await context.params;
-  const user = await getAuthenticatedUser();
+  const businessAccount = await getCurrentBusinessAccount();
 
-  if (!user) {
+  if (!businessAccount) {
     return NextResponse.json(
       {
         message: "Authentication required."
@@ -48,18 +48,12 @@ export async function POST(
     );
   }
 
-  const [{ data: callRecord, error: callError }, { data: transcriptRecord, error: transcriptError }, { data: existingAnalysis, error: analysisFetchError }] =
-    await Promise.all([
-      supabase.from("calls").select(callsSelectFields).eq("id", id).maybeSingle(),
-      supabase
-        .from("transcripts")
-        .select("id, call_id, transcript_text, version")
-        .eq("call_id", id)
-        .order("version", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase.from("analysis").select("*").eq("call_id", id).maybeSingle()
-    ]);
+  const { data: callRecord, error: callError } = await supabase
+    .from("calls")
+    .select(callsSelectFields)
+    .eq("id", id)
+    .eq("business_id", businessAccount.businessId)
+    .maybeSingle();
 
   if (callError) {
     return NextResponse.json(
@@ -78,6 +72,18 @@ export async function POST(
       { status: 404 }
     );
   }
+
+  const [{ data: transcriptRecord, error: transcriptError }, { data: existingAnalysis, error: analysisFetchError }] =
+    await Promise.all([
+      supabase
+        .from("transcripts")
+        .select("id, call_id, transcript_text, version")
+        .eq("call_id", id)
+        .order("version", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from("analysis").select("*").eq("call_id", id).maybeSingle()
+    ]);
 
   if (transcriptError) {
     return NextResponse.json(

@@ -5,6 +5,7 @@ import {
   mapSupabaseCallToDashboardRow,
   type SupabaseCallRecord
 } from "@/lib/dashboard-calls";
+import { resolveBusinessAccountByIdentifier } from "@/lib/business-account";
 import { ingestCall } from "@/lib/call-ingestion";
 import { appendIntegrationError } from "@/lib/integrations/error-log";
 import { updateProviderConnectionState } from "@/lib/integrations/connection-status";
@@ -36,6 +37,19 @@ type ForwardTargetResolution =
         | "missing_forward_number";
       message: string;
     };
+
+type WebhookAccountContext = {
+  accountIdentifier: string | null;
+  businessId: string | null;
+  userId: string | null;
+  source:
+    | "request"
+    | "request_passthrough"
+    | "single_user_fallback"
+    | "missing_account_identifier"
+    | "ambiguous_users"
+    | "no_users";
+};
 
 function escapeXml(value: string) {
   return value
@@ -155,11 +169,36 @@ function getWebhookTimestamp(params: URLSearchParams) {
   return Number.isNaN(parsed.valueOf()) ? getTimestamp() : parsed.toISOString();
 }
 
-async function resolveAutomaticSmsAccountIdentifier(accountIdentifier: string | null) {
+async function resolveWebhookAccountContext(
+  accountIdentifier: string | null,
+  options: { allowSingleUserFallback?: boolean } = {}
+): Promise<WebhookAccountContext> {
   if (accountIdentifier) {
+    const businessAccount = await resolveBusinessAccountByIdentifier(accountIdentifier).catch(() => null);
+
+    if (businessAccount) {
+      return {
+        accountIdentifier: businessAccount.businessId,
+        businessId: businessAccount.businessId,
+        userId: businessAccount.userId,
+        source: "request"
+      };
+    }
+
     return {
       accountIdentifier,
-      source: "request" as const
+      businessId: accountIdentifier,
+      userId: accountIdentifier,
+      source: "request_passthrough"
+    };
+  }
+
+  if (!options.allowSingleUserFallback) {
+    return {
+      accountIdentifier: null,
+      businessId: null,
+      userId: null,
+      source: "missing_account_identifier"
     };
   }
 
@@ -176,36 +215,44 @@ async function resolveAutomaticSmsAccountIdentifier(accountIdentifier: string | 
   const users = data.users ?? [];
 
   if (users.length === 1) {
+    const businessAccount = await resolveBusinessAccountByIdentifier(users[0].id).catch(() => null);
+
     return {
-      accountIdentifier: users[0].id,
-      source: "single_user_fallback" as const
+      accountIdentifier: businessAccount?.businessId ?? users[0].id,
+      businessId: businessAccount?.businessId ?? users[0].id,
+      userId: businessAccount?.userId ?? users[0].id,
+      source: "single_user_fallback"
     };
   }
 
   return {
     accountIdentifier: null,
-    source: users.length === 0 ? ("no_users" as const) : ("ambiguous_users" as const)
+    businessId: null,
+    userId: null,
+    source: users.length === 0 ? "no_users" : "ambiguous_users"
   };
 }
 
 async function recordIntegrationFailure({
   accountIdentifier,
+  userId,
   callId,
   message,
   eventType
 }: {
   accountIdentifier: string | null;
+  userId?: string | null;
   callId?: string | null;
   message: string;
   eventType: string;
 }) {
-  if (!accountIdentifier) {
+  if (!accountIdentifier || !userId) {
     return;
   }
 
   try {
     await updateProviderConnectionState({
-      userId: accountIdentifier,
+      userId,
       provider: "twilio",
       accountIdentifier,
       status: "error",
@@ -214,7 +261,7 @@ async function recordIntegrationFailure({
     });
 
     await appendIntegrationError({
-      userId: accountIdentifier,
+      userId,
       provider: "twilio",
       callId: callId ?? null,
       errorMessage: message,
@@ -222,7 +269,7 @@ async function recordIntegrationFailure({
     });
 
     await recordMonitoringEvent({
-      userId: accountIdentifier,
+      userId,
       provider: "twilio",
       type: "ingestion_failed",
       callId: callId ?? null,
@@ -237,14 +284,18 @@ async function recordIntegrationFailure({
   }
 }
 
-async function markIntegrationConnected(accountIdentifier: string | null, timestamp: string) {
-  if (!accountIdentifier) {
+async function markIntegrationConnected(
+  accountIdentifier: string | null,
+  userId: string | null,
+  timestamp: string
+) {
+  if (!accountIdentifier || !userId) {
     return;
   }
 
   try {
     await updateProviderConnectionState({
-      userId: accountIdentifier,
+      userId,
       provider: "twilio",
       accountIdentifier,
       status: "connected",
@@ -368,7 +419,10 @@ async function resolveForwardTarget(accountIdentifier: string | null): Promise<F
   }
 }
 
-async function persistMissedInboundCall(params: URLSearchParams, accountIdentifier: string | null) {
+async function persistMissedInboundCall(
+  params: URLSearchParams,
+  accountContext: WebhookAccountContext
+) {
   const callSid = getFormValue(params, "CallSid");
   const from = getFormValue(params, "From") ?? "Unknown number";
   const to = getFormValue(params, "To") ?? FALLBACK_FORWARD_NUMBER ?? "Unknown destination";
@@ -382,7 +436,8 @@ async function persistMissedInboundCall(params: URLSearchParams, accountIdentifi
       dialStatus
     });
     await recordIntegrationFailure({
-      accountIdentifier,
+      accountIdentifier: accountContext.accountIdentifier,
+      userId: accountContext.userId,
       message: "Missed-call callback was received without CallSid.",
       eventType: "voice_dial_completed"
     });
@@ -405,6 +460,8 @@ async function persistMissedInboundCall(params: URLSearchParams, accountIdentifi
       },
       {
         supabase,
+        userId: accountContext.userId ?? undefined,
+        businessId: accountContext.businessId ?? undefined,
         callerName: from,
         status: "action_required",
         revenueEstimate: DEFAULT_MISSED_CALL_REVENUE_ESTIMATE
@@ -417,14 +474,15 @@ async function persistMissedInboundCall(params: URLSearchParams, accountIdentifi
       to,
       dialStatus,
       callId: result.callId,
+      businessId: accountContext.businessId,
       duplicate: result.duplicate,
       storedStatus: result.storedStatus
     });
 
-    if (accountIdentifier && result.callId && !result.duplicate) {
+    if (accountContext.userId && result.callId && !result.duplicate) {
       try {
         await recordMonitoringEvent({
-          userId: accountIdentifier,
+          userId: accountContext.userId,
           provider: "twilio",
           type: "call_ingested",
           callId: result.callId,
@@ -432,7 +490,7 @@ async function persistMissedInboundCall(params: URLSearchParams, accountIdentifi
         });
       } catch (error) {
         console.warn("[twilio-voice-webhook] Failed to record monitoring event after missed-call ingestion.", {
-          accountIdentifier,
+          accountIdentifier: accountContext.accountIdentifier,
           callId: result.callId,
           message: error instanceof Error ? error.message : "Unknown error"
         });
@@ -455,7 +513,8 @@ async function persistMissedInboundCall(params: URLSearchParams, accountIdentifi
     });
 
     await recordIntegrationFailure({
-      accountIdentifier,
+      accountIdentifier: accountContext.accountIdentifier,
+      userId: accountContext.userId,
       message,
       eventType: "voice_dial_completed"
     });
@@ -469,13 +528,16 @@ async function persistMissedInboundCall(params: URLSearchParams, accountIdentifi
 
 async function loadDashboardRowForCallId(
   supabase: ReturnType<typeof createAdminClient>,
-  callId: string
+  callId: string,
+  businessId: string | null
 ) {
-  const { data, error } = await supabase
-    .from("calls")
-    .select(callsSelectFields)
-    .eq("id", callId)
-    .maybeSingle();
+  let query = supabase.from("calls").select(callsSelectFields).eq("id", callId);
+
+  if (businessId) {
+    query = query.eq("business_id", businessId);
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
     throw error;
@@ -490,13 +552,20 @@ async function loadDashboardRowForCallId(
 
 async function markCallFollowUpQueued(
   supabase: ReturnType<typeof createAdminClient>,
-  callId: string
+  callId: string,
+  businessId: string | null
 ) {
-  const { error } = await supabase
+  let query = supabase
     .from("calls")
     .update({ status: "under_review" })
     .eq("id", callId)
     .neq("status", "resolved");
+
+  if (businessId) {
+    query = query.eq("business_id", businessId);
+  }
+
+  const { error } = await query;
 
   if (error) {
     throw error;
@@ -517,43 +586,53 @@ async function maybeSendAutomaticMissedCallSms({
     callId
   });
 
-  let resolvedAccountIdentifier = accountIdentifier;
+  let resolvedAccountContext: WebhookAccountContext;
 
-  if (!resolvedAccountIdentifier) {
-    try {
-      const resolution = await resolveAutomaticSmsAccountIdentifier(accountIdentifier);
-      resolvedAccountIdentifier = resolution.accountIdentifier;
-
-      if (resolvedAccountIdentifier) {
-        console.info("[twilio-voice-webhook] Automatic missed-call SMS account resolved.", {
-          resolvedAccountIdentifier,
-          source: resolution.source
-        });
-      } else {
-        console.warn("[twilio-voice-webhook] Automatic missed-call SMS account resolution failed.", {
-          source: resolution.source
-        });
-      }
-    } catch (error) {
-      console.warn("[twilio-voice-webhook] Automatic missed-call SMS account resolution crashed.", {
-        message: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  }
-
-  if (!resolvedAccountIdentifier || !callId) {
-    console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped.", {
-      accountIdentifier: resolvedAccountIdentifier ?? undefined,
-      callId,
-      reason: !resolvedAccountIdentifier ? "missing_account_identifier" : "missing_call_id"
+  try {
+    resolvedAccountContext = await resolveWebhookAccountContext(accountIdentifier, {
+      allowSingleUserFallback: !accountIdentifier
+    });
+  } catch (error) {
+    console.warn("[twilio-voice-webhook] Automatic missed-call SMS account resolution crashed.", {
+      message: error instanceof Error ? error.message : "Unknown error"
     });
     return;
   }
 
+  if (resolvedAccountContext.accountIdentifier) {
+    console.info("[twilio-voice-webhook] Automatic missed-call SMS account resolved.", {
+      accountIdentifier: resolvedAccountContext.accountIdentifier,
+      businessId: resolvedAccountContext.businessId,
+      userId: resolvedAccountContext.userId,
+      source: resolvedAccountContext.source
+    });
+  } else {
+    console.warn("[twilio-voice-webhook] Automatic missed-call SMS account resolution failed.", {
+      source: resolvedAccountContext.source
+    });
+  }
+
+  if (!resolvedAccountContext.userId || !resolvedAccountContext.businessId || !callId) {
+    console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped.", {
+      accountIdentifier: resolvedAccountContext.accountIdentifier ?? undefined,
+      callId,
+      reason:
+        !resolvedAccountContext.accountIdentifier ||
+        !resolvedAccountContext.userId ||
+        !resolvedAccountContext.businessId
+          ? "missing_account_identifier"
+          : "missing_call_id"
+    });
+    return;
+  }
+
+  const resolvedBusinessId = resolvedAccountContext.businessId;
+  const resolvedUserId = resolvedAccountContext.userId;
+
   let settings;
 
   try {
-    settings = await getMissedCallRecoverySettings(resolvedAccountIdentifier);
+    settings = await getMissedCallRecoverySettings(resolvedBusinessId);
   } catch (error) {
     const message =
       error instanceof Error
@@ -561,13 +640,13 @@ async function maybeSendAutomaticMissedCallSms({
         : "Automatic missed-call SMS settings could not be loaded.";
 
     console.warn("[twilio-voice-webhook] Automatic missed-call SMS settings lookup failed.", {
-      accountIdentifier: resolvedAccountIdentifier,
+      accountIdentifier: resolvedAccountContext.accountIdentifier,
       callId,
       message
     });
 
     await appendIntegrationError({
-      userId: resolvedAccountIdentifier,
+      userId: resolvedUserId,
       provider: "twilio",
       callId,
       errorMessage: message,
@@ -580,7 +659,7 @@ async function maybeSendAutomaticMissedCallSms({
 
   if (!settings.autoFollowUpEnabled) {
     console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because auto follow-up is disabled.", {
-      accountIdentifier: resolvedAccountIdentifier,
+      accountIdentifier: resolvedAccountContext.accountIdentifier,
       callId
     });
     return;
@@ -589,19 +668,19 @@ async function maybeSendAutomaticMissedCallSms({
   let row: Awaited<ReturnType<typeof loadDashboardRowForCallId>>;
 
   try {
-    row = await loadDashboardRowForCallId(supabase, callId);
+    row = await loadDashboardRowForCallId(supabase, callId, resolvedBusinessId);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Automatic missed-call SMS call lookup failed.";
 
     console.warn("[twilio-voice-webhook] Automatic missed-call SMS could not reload the call row.", {
-      accountIdentifier: resolvedAccountIdentifier,
+      accountIdentifier: resolvedAccountContext.accountIdentifier,
       callId,
       message
     });
 
     await appendIntegrationError({
-      userId: resolvedAccountIdentifier,
+      userId: resolvedUserId,
       provider: "twilio",
       callId,
       errorMessage: message,
@@ -614,7 +693,7 @@ async function maybeSendAutomaticMissedCallSms({
 
   if (!row) {
     console.warn("[twilio-voice-webhook] Automatic missed-call SMS skipped because the call row could not be reloaded.", {
-      accountIdentifier: resolvedAccountIdentifier,
+      accountIdentifier: resolvedAccountContext.accountIdentifier,
       callId
     });
     return;
@@ -626,7 +705,7 @@ async function maybeSendAutomaticMissedCallSms({
     result = await sendFollowUpForCall({
       row,
       settings,
-      userId: resolvedAccountIdentifier,
+      userId: resolvedUserId,
       source: "automatic_missed_call",
       enforceCooldown: true
     });
@@ -637,13 +716,13 @@ async function maybeSendAutomaticMissedCallSms({
         : "Automatic missed-call SMS failed before Twilio accepted the request.";
 
     console.warn("[twilio-voice-webhook] Automatic missed-call SMS send crashed.", {
-      accountIdentifier: resolvedAccountIdentifier,
+      accountIdentifier: resolvedAccountContext.accountIdentifier,
       callId,
       message
     });
 
     await appendIntegrationError({
-      userId: resolvedAccountIdentifier,
+      userId: resolvedUserId,
       provider: "twilio",
       callId,
       errorMessage: message,
@@ -656,16 +735,16 @@ async function maybeSendAutomaticMissedCallSms({
 
   if (!result.ok) {
     if (result.reason === "cooldown_active") {
-      await markCallFollowUpQueued(supabase, callId).catch((error) => {
+      await markCallFollowUpQueued(supabase, callId, resolvedBusinessId).catch((error) => {
         console.warn("[twilio-voice-webhook] Automatic missed-call SMS cooldown skip could not update call status.", {
-          accountIdentifier: resolvedAccountIdentifier,
+          accountIdentifier: resolvedAccountContext.accountIdentifier,
           callId,
           message: error instanceof Error ? error.message : "Unknown error"
         });
       });
 
       console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because of cooldown.", {
-        accountIdentifier: resolvedAccountIdentifier,
+        accountIdentifier: resolvedAccountContext.accountIdentifier,
         callId,
         message: result.message
       });
@@ -673,14 +752,14 @@ async function maybeSendAutomaticMissedCallSms({
     }
 
     console.warn("[twilio-voice-webhook] Automatic missed-call SMS failed.", {
-      accountIdentifier: resolvedAccountIdentifier,
+      accountIdentifier: resolvedAccountContext.accountIdentifier,
       callId,
       reason: result.reason,
       message: result.message
     });
 
     await appendIntegrationError({
-      userId: resolvedAccountIdentifier,
+      userId: resolvedUserId,
       provider: "twilio",
       callId,
       errorMessage: result.message,
@@ -691,20 +770,20 @@ async function maybeSendAutomaticMissedCallSms({
     return;
   }
 
-  await markCallFollowUpQueued(supabase, callId).catch(async (error) => {
+  await markCallFollowUpQueued(supabase, callId, resolvedBusinessId).catch(async (error) => {
     const message =
       error instanceof Error
         ? error.message
         : "Automatic missed-call SMS sent but the call status could not be updated.";
 
     console.warn("[twilio-voice-webhook] Automatic missed-call SMS sent but status update failed.", {
-      accountIdentifier: resolvedAccountIdentifier,
+      accountIdentifier: resolvedAccountContext.accountIdentifier,
       callId,
       message
     });
 
     await appendIntegrationError({
-      userId: resolvedAccountIdentifier,
+      userId: resolvedUserId,
       provider: "twilio",
       callId,
       errorMessage: message,
@@ -714,7 +793,8 @@ async function maybeSendAutomaticMissedCallSms({
   });
 
   console.info("[twilio-voice-webhook] Automatic missed-call SMS sent.", {
-    accountIdentifier: resolvedAccountIdentifier,
+    accountIdentifier: resolvedAccountContext.accountIdentifier,
+    businessId: resolvedAccountContext.businessId,
     callId,
     mode: result.mode,
     sid: result.sid
@@ -759,6 +839,9 @@ export async function POST(request: Request) {
   const callStatus = getFormValue(params, "CallStatus");
   const dialStatus = getFormValue(params, "DialCallStatus");
   const eventTimestamp = getWebhookTimestamp(params);
+  const accountContext = await resolveWebhookAccountContext(accountIdentifier, {
+    allowSingleUserFallback: !accountIdentifier
+  });
 
   logWebhookHit("POST", {
     accountIdentifier: accountIdentifier ?? undefined,
@@ -769,11 +852,12 @@ export async function POST(request: Request) {
     dialStatus
   });
 
-  await markIntegrationConnected(accountIdentifier, eventTimestamp);
+  await markIntegrationConnected(accountContext.accountIdentifier, accountContext.userId, eventTimestamp);
 
   if (isDialCallback(params, request.url)) {
     console.info("[twilio-voice-webhook] DialCallStatus received.", {
-      accountIdentifier: accountIdentifier ?? undefined,
+      accountIdentifier: accountContext.accountIdentifier ?? undefined,
+      businessId: accountContext.businessId ?? undefined,
       callSid,
       from,
       to,
@@ -781,14 +865,14 @@ export async function POST(request: Request) {
     });
 
     if (isMissedDialStatus(dialStatus)) {
-      const ingestion = await persistMissedInboundCall(params, accountIdentifier);
+      const ingestion = await persistMissedInboundCall(params, accountContext);
 
       if (ingestion.callId && !ingestion.duplicate) {
         try {
           const supabase = createAdminClient();
           await maybeSendAutomaticMissedCallSms({
             supabase,
-            accountIdentifier,
+            accountIdentifier: accountContext.accountIdentifier,
             callId: ingestion.callId
           });
         } catch (error) {
@@ -798,14 +882,14 @@ export async function POST(request: Request) {
               : "Automatic missed-call SMS failed unexpectedly.";
 
           console.warn("[twilio-voice-webhook] Automatic missed-call SMS branch failed unexpectedly.", {
-            accountIdentifier: accountIdentifier ?? undefined,
+            accountIdentifier: accountContext.accountIdentifier ?? undefined,
             callId: ingestion.callId,
             message
           });
 
-          if (accountIdentifier) {
+          if (accountContext.userId) {
             await appendIntegrationError({
-              userId: accountIdentifier,
+              userId: accountContext.userId,
               provider: "twilio",
               callId: ingestion.callId,
               errorMessage: message,
@@ -816,7 +900,7 @@ export async function POST(request: Request) {
         }
       } else {
         console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because the missed call record was already present.", {
-          accountIdentifier: accountIdentifier ?? undefined,
+          accountIdentifier: accountContext.accountIdentifier ?? undefined,
           callSid,
           dialStatus: dialStatus ?? null,
           callId: ingestion.callId,
@@ -826,7 +910,7 @@ export async function POST(request: Request) {
     } else {
       if (isSuccessfulDialStatus(dialStatus)) {
         console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because the forwarded call connected successfully.", {
-          accountIdentifier: accountIdentifier ?? undefined,
+          accountIdentifier: accountContext.accountIdentifier ?? undefined,
           callSid,
           from,
           to,
@@ -834,7 +918,7 @@ export async function POST(request: Request) {
         });
       } else {
         console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because DialCallStatus did not qualify for recovery.", {
-          accountIdentifier: accountIdentifier ?? undefined,
+          accountIdentifier: accountContext.accountIdentifier ?? undefined,
           callSid,
           from,
           to,
@@ -850,7 +934,8 @@ export async function POST(request: Request) {
 
   if (!forwardTarget.ok) {
     await recordIntegrationFailure({
-      accountIdentifier,
+      accountIdentifier: accountContext.accountIdentifier,
+      userId: accountContext.userId,
       message: forwardTarget.message,
       eventType: "voice_inbound"
     });

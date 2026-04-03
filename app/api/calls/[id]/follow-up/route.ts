@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/auth/session";
+import { getCurrentBusinessAccount } from "@/lib/business-account";
 import { demoMissedCallRecoveryRows } from "@/lib/demo-dashboard-data";
 import { analysisSelectFields, callsSelectFields, mapSupabaseCallToDashboardRow, type SupabaseAnalysisRecord, type SupabaseCallRecord } from "@/lib/dashboard-calls";
 import { sendFollowUpForCall } from "@/lib/follow-up-sms";
@@ -13,9 +13,9 @@ export async function POST(
   }
 ) {
   const { id } = await context.params;
-  const user = await getAuthenticatedUser();
+  const businessAccount = await getCurrentBusinessAccount();
 
-  if (!user) {
+  if (!businessAccount) {
     return NextResponse.json(
       {
         message: "Authentication required."
@@ -25,11 +25,11 @@ export async function POST(
   }
 
   const demoRow = demoMissedCallRecoveryRows.find((row) => row.id === id);
-  const missedCallRecoverySettings = await getMissedCallRecoverySettings(user.id).catch(() => null);
+  const missedCallRecoverySettings = await getMissedCallRecoverySettings(businessAccount.businessId).catch(() => null);
 
   if (demoRow) {
     console.info("[follow-up] Manual SMS branch entered for demo recovery case.", {
-      userId: user.id,
+      userId: businessAccount.userId,
       callId: demoRow.id,
       caller: demoRow.caller,
       phone: demoRow.phone
@@ -39,7 +39,7 @@ export async function POST(
       row: demoRow,
       forceMock: true,
       settings: missedCallRecoverySettings ?? undefined,
-      userId: user.id,
+      userId: businessAccount.userId,
       source: "manual"
     });
 
@@ -74,10 +74,12 @@ export async function POST(
     );
   }
 
-  const [callResult, analysisResult] = await Promise.all([
-    supabase.from("calls").select(callsSelectFields).eq("id", id).maybeSingle(),
-    supabase.from("analysis").select(analysisSelectFields).eq("call_id", id).maybeSingle()
-  ]);
+  const callResult = await supabase
+    .from("calls")
+    .select(callsSelectFields)
+    .eq("id", id)
+    .eq("business_id", businessAccount.businessId)
+    .maybeSingle();
 
   if (callResult.error) {
     return NextResponse.json(
@@ -97,13 +99,16 @@ export async function POST(
     );
   }
 
+  const analysisResult = await supabase.from("analysis").select(analysisSelectFields).eq("call_id", id).maybeSingle();
+
   const row = mapSupabaseCallToDashboardRow(
     callResult.data as SupabaseCallRecord,
     analysisResult.error ? null : (analysisResult.data as SupabaseAnalysisRecord | null)
   );
 
   console.info("[follow-up] Manual SMS branch entered for live recovery case.", {
-    userId: user.id,
+    userId: businessAccount.userId,
+    businessId: businessAccount.businessId,
     callId: row.id,
     caller: row.caller,
     phone: row.phone
@@ -112,7 +117,7 @@ export async function POST(
   const result = await sendFollowUpForCall({
     row,
     settings: missedCallRecoverySettings ?? undefined,
-    userId: user.id,
+    userId: businessAccount.userId,
     source: "manual"
   });
 
@@ -145,6 +150,7 @@ export async function POST(
     .from("calls")
     .update({ status: "under_review" })
     .eq("id", row.id)
+    .eq("business_id", businessAccount.businessId)
     .neq("status", "resolved");
 
   if (updateError) {

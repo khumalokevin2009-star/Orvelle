@@ -1,5 +1,6 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { CallRecordPage } from "@/components/call-record-page";
+import { getCurrentBusinessAccount } from "@/lib/business-account";
 import { buildCallRecordView, type AnalysisRecord, type TranscriptRecord } from "@/lib/call-detail";
 import { getDemoCallRecordView } from "@/lib/demo-dashboard-data";
 import {
@@ -21,12 +22,19 @@ export default async function CallPage({
     return <CallRecordPage initialRow={demoRecord.row} detail={demoRecord.detail} />;
   }
 
+  const businessAccount = await getCurrentBusinessAccount();
+
+  if (!businessAccount) {
+    redirect("/login");
+  }
+
   const supabase = createAdminClient();
 
   const { data, error } = await supabase
     .from("calls")
     .select(callsSelectFields)
     .eq("id", id)
+    .eq("business_id", businessAccount.businessId)
     .maybeSingle();
 
   if (error) {

@@ -53,6 +53,7 @@ type ProviderWebhookHandler = {
   ingest(args: {
     supabase: ReturnType<typeof createAdminClient>;
     parsedWebhook: ParsedWebhookResult;
+    businessId?: string | null;
   }): Promise<ProviderIngestionResult>;
 };
 

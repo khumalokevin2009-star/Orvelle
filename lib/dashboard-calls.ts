@@ -17,13 +17,14 @@ const timeFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 export const callsSelectFields =
-  "id, external_id, caller_name, caller_phone, direction, started_at, ended_at, recording_filename, source_system, assigned_owner, status, revenue_estimate, currency_code, updated_at";
+  "id, business_id, external_id, caller_name, caller_phone, direction, started_at, ended_at, recording_filename, source_system, assigned_owner, status, revenue_estimate, currency_code, updated_at";
 
 export const analysisSelectFields =
   "call_id, analysis_status, failure_type, lead_intent_level, intent_level, call_outcome, revenue_estimate, revenue_impact_estimate, primary_issue, missed_opportunity, recommended_action, summary, analyst_note";
 
 export type SupabaseCallRecord = {
   id: string;
+  business_id: string | null;
   external_id: string | null;
   caller_name: string;
   caller_phone: string | null;

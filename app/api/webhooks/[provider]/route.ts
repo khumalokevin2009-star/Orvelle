@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { resolveBusinessAccountByIdentifier } from "@/lib/business-account";
 import { processCallAfterIngestion } from "@/lib/call-processing";
 import { updateProviderConnectionState } from "@/lib/integrations/connection-status";
 import { appendIntegrationError } from "@/lib/integrations/error-log";
@@ -35,24 +36,26 @@ function buildTwimlResponse(message?: string) {
 
 async function persistIntegrationFailure({
   accountIdentifier,
+  userId,
   provider,
   errorMessage,
   eventType,
   callId
 }: {
   accountIdentifier: string | null;
+  userId?: string | null;
   provider: string;
   errorMessage: string;
   eventType?: string | null;
   callId?: string | null;
 }) {
-  if (!accountIdentifier) {
+  if (!accountIdentifier || !userId) {
     return;
   }
 
   try {
     await updateProviderConnectionState({
-      userId: accountIdentifier,
+      userId,
       provider,
       accountIdentifier,
       status: "error",
@@ -61,7 +64,7 @@ async function persistIntegrationFailure({
     });
 
     await appendIntegrationError({
-      userId: accountIdentifier,
+      userId,
       provider,
       callId,
       errorMessage,
@@ -69,7 +72,7 @@ async function persistIntegrationFailure({
     });
 
     await recordMonitoringEvent({
-      userId: accountIdentifier,
+      userId,
       provider,
       type: "ingestion_failed",
       callId,
@@ -92,24 +95,26 @@ async function persistIntegrationFailure({
 
 async function persistIntegrationWarning({
   accountIdentifier,
+  userId,
   provider,
   warningMessage,
   eventType,
   callId
 }: {
   accountIdentifier: string | null;
+  userId?: string | null;
   provider: string;
   warningMessage: string;
   eventType?: string | null;
   callId?: string | null;
 }) {
-  if (!accountIdentifier) {
+  if (!accountIdentifier || !userId) {
     return;
   }
 
   try {
     await appendIntegrationError({
-      userId: accountIdentifier,
+      userId,
       provider,
       callId,
       errorMessage: warningMessage,
@@ -138,6 +143,12 @@ export async function POST(
   const { provider } = await context.params;
   const requestUrl = new URL(request.url);
   const accountIdentifier = requestUrl.searchParams.get("account")?.trim() || null;
+  const businessAccount = accountIdentifier
+    ? await resolveBusinessAccountByIdentifier(accountIdentifier).catch(() => null)
+    : null;
+  const resolvedAccountIdentifier = businessAccount?.businessId ?? accountIdentifier;
+  const resolvedBusinessId = businessAccount?.businessId ?? accountIdentifier;
+  const resolvedUserId = businessAccount?.userId ?? accountIdentifier;
   const handler = getWebhookProviderHandler(provider);
   const requestMetadata = buildRequestMetadata(request, provider);
 
@@ -219,7 +230,8 @@ export async function POST(
       error instanceof Error ? error.message : "Unable to parse the webhook payload safely.";
 
     await persistIntegrationFailure({
-      accountIdentifier,
+      accountIdentifier: resolvedAccountIdentifier,
+      userId: resolvedUserId,
       provider,
       errorMessage: message
     });
@@ -248,7 +260,8 @@ export async function POST(
       error instanceof Error ? error.message : "Unable to initialize the webhook ingestion client.";
 
     await persistIntegrationFailure({
-      accountIdentifier,
+      accountIdentifier: resolvedAccountIdentifier,
+      userId: resolvedUserId,
       provider,
       errorMessage: message,
       eventType: parsedWebhook.metadata.eventType
@@ -289,12 +302,14 @@ export async function POST(
   try {
     const ingestionResult = await handler.ingest({
       supabase,
-      parsedWebhook
+      parsedWebhook,
+      businessId: resolvedBusinessId
     });
 
     if (ingestionResult.body.warning) {
       await persistIntegrationWarning({
-        accountIdentifier,
+        accountIdentifier: resolvedAccountIdentifier,
+        userId: resolvedUserId,
         provider,
         warningMessage: ingestionResult.body.message,
         eventType: ingestionResult.metadata.eventType,
@@ -350,9 +365,9 @@ export async function POST(
     if (accountIdentifier && !ingestionResult.body.warning) {
       try {
         await updateProviderConnectionState({
-          userId: accountIdentifier,
+          userId: resolvedUserId ?? accountIdentifier,
           provider,
-          accountIdentifier,
+          accountIdentifier: resolvedAccountIdentifier ?? accountIdentifier,
           status: "connected",
           connectionHealth: "healthy",
           lastEventReceived: normalizedPayload.timestamp
@@ -365,7 +380,7 @@ export async function POST(
 
         logWebhookWarning("Webhook ingested but integration status update failed.", {
           ...requestMetadata,
-          accountIdentifier,
+          accountIdentifier: resolvedAccountIdentifier ?? undefined,
           externalCallId: normalizedPayload.external_call_id,
           reason: "integration_status_update_failed",
           message
@@ -376,7 +391,7 @@ export async function POST(
     if (accountIdentifier && !ingestionResult.body.duplicate && !ingestionResult.body.warning) {
       try {
         await recordMonitoringEvent({
-          userId: accountIdentifier,
+          userId: resolvedUserId ?? accountIdentifier,
           provider,
           type: "call_ingested",
           callId: ingestionResult.body.callId ?? null,
@@ -392,7 +407,7 @@ export async function POST(
 
         logWebhookWarning("Webhook ingested but monitoring event could not be recorded.", {
           ...requestMetadata,
-          accountIdentifier,
+          accountIdentifier: resolvedAccountIdentifier ?? undefined,
           externalCallId: normalizedPayload.external_call_id,
           reason: "monitoring_event_failed",
           message
@@ -412,7 +427,7 @@ export async function POST(
           supabase,
           monitoringContext: accountIdentifier
             ? {
-                userId: accountIdentifier,
+                userId: resolvedUserId ?? accountIdentifier,
                 provider
               }
             : undefined
@@ -439,7 +454,8 @@ export async function POST(
       error instanceof Error ? error.message : "Unexpected webhook ingestion failure.";
 
     await persistIntegrationFailure({
-      accountIdentifier,
+      accountIdentifier: resolvedAccountIdentifier,
+      userId: resolvedUserId,
       provider,
       errorMessage: message,
       eventType: parsedWebhook.metadata.eventType,

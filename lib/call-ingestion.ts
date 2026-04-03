@@ -11,6 +11,7 @@ const defaultCurrencyCode = "GBP";
 
 type BuildCallInsertOptions = {
   userId?: string | null;
+  businessId?: string | null;
   callerName?: string;
   assignedOwner?: string;
   status?: "uploaded" | "action_required" | "under_review" | "resolved" | "escalated";
@@ -97,6 +98,7 @@ function buildCallInsertFromNormalizedRecord(
       : null;
 
   return {
+    business_id: options.businessId?.trim() || null,
     external_id: record.external_call_id,
     caller_name: options.callerName?.trim() || defaultCallerName,
     caller_phone: record.phone_number,
@@ -132,19 +134,23 @@ export function buildCallInsertFromProviderPayload(
     databaseStatus: options.status,
     revenueEstimate: options.revenueEstimate,
     currencyCode: options.currencyCode,
-    recordingFileName: options.recordingFileName
+    recordingFileName: options.recordingFileName,
+    businessId: options.businessId
   });
 }
 
 async function fetchExistingCallId(
   supabase: SupabaseAdminClient,
-  externalCallId: string
+  externalCallId: string,
+  businessId?: string | null
 ) {
-  const { data, error } = await supabase
-    .from("calls")
-    .select("id")
-    .eq("external_id", externalCallId)
-    .maybeSingle();
+  let query = supabase.from("calls").select("id").eq("external_id", externalCallId);
+
+  if (businessId?.trim()) {
+    query = query.eq("business_id", businessId.trim());
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) {
     throw error;
@@ -164,7 +170,8 @@ async function insertNormalizedCall(
     databaseStatus: options.status ?? normalizedCall.status,
     revenueEstimate: options.revenueEstimate,
     currencyCode: options.currencyCode,
-    recordingFileName: options.recordingFileName
+    recordingFileName: options.recordingFileName,
+    businessId: options.businessId
   });
 
   const attemptInsert = async (payload: ReturnType<typeof buildCallInsertFromNormalizedRecord>) =>
@@ -184,7 +191,8 @@ async function insertNormalizedCall(
       databaseStatus: fallbackDatabaseStatus,
       revenueEstimate: options.revenueEstimate,
       currencyCode: options.currencyCode,
-      recordingFileName: options.recordingFileName
+      recordingFileName: options.recordingFileName,
+      businessId: options.businessId
     });
 
     ({ data, error } = await attemptInsert(fallbackInsertPayload));
@@ -220,7 +228,11 @@ export async function ingestCall(
   const supabase = options.supabase ?? createAdminClient();
 
   try {
-    const existingCallId = await fetchExistingCallId(supabase, normalizedCall.external_call_id);
+    const existingCallId = await fetchExistingCallId(
+      supabase,
+      normalizedCall.external_call_id,
+      options.businessId
+    );
 
     if (existingCallId) {
       console.info("[call-ingestion] Duplicate call ignored.", {
@@ -269,7 +281,11 @@ export async function ingestCall(
       "code" in error &&
       (error as { code?: string }).code === "23505"
     ) {
-      const callId = await fetchExistingCallId(supabase, normalizedCall.external_call_id);
+      const callId = await fetchExistingCallId(
+        supabase,
+        normalizedCall.external_call_id,
+        options.businessId
+      );
 
       return {
         status: "duplicate",

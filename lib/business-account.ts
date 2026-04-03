@@ -177,6 +177,28 @@ async function getBusinessMembershipRowByUserId(userId: string) {
   return (data as BusinessMembershipRow | null) ?? null;
 }
 
+async function getBusinessMembershipRowByBusinessId(businessId: string) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("business_memberships")
+    .select("user_id, business_id, business_name, solution_mode, business_vertical, updated_at")
+    .eq("business_id", businessId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingBusinessMembershipTableError(error)) {
+      console.warn("[business-account] business_memberships table is not available yet. Falling back to auth metadata for business-id resolution.");
+      return null;
+    }
+
+    throw error;
+  }
+
+  return (data as BusinessMembershipRow | null) ?? null;
+}
+
 async function getCurrentBusinessMembershipRow(userId: string) {
   const supabase = await createServerClient();
   const { data, error } = await supabase
@@ -253,6 +275,26 @@ export function mergeBusinessAccountMetadata({
 export async function getBusinessAccountByUserId(userId: string) {
   const membershipRow = await getBusinessMembershipRowByUserId(userId);
   return membershipRow ? readBusinessAccountFromMembershipRow(membershipRow) : null;
+}
+
+export async function getBusinessAccountByBusinessId(businessId: string) {
+  const membershipRow = await getBusinessMembershipRowByBusinessId(businessId);
+  return membershipRow ? readBusinessAccountFromMembershipRow(membershipRow) : null;
+}
+
+export async function resolveBusinessAccountByIdentifier(identifier: string) {
+  const accountByBusinessId = await getBusinessAccountByBusinessId(identifier);
+
+  if (accountByBusinessId) {
+    return accountByBusinessId;
+  }
+
+  return getBusinessAccountByUserId(identifier);
+}
+
+export async function resolveBusinessUserIdFromIdentifier(identifier: string) {
+  const businessAccount = await resolveBusinessAccountByIdentifier(identifier);
+  return businessAccount?.userId ?? identifier;
 }
 
 export async function upsertBusinessAccountMembership({

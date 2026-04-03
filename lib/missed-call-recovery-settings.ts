@@ -9,6 +9,7 @@ import {
   type SolutionMode
 } from "@/lib/solution-mode";
 import {
+  getBusinessAccountByBusinessId,
   getBusinessAccountByUserId,
   mergeBusinessAccountMetadata,
   readBusinessAccountFromUser,
@@ -124,17 +125,19 @@ export function validateMissedCallRecoverySettings(settings: MissedCallRecoveryS
 
 export async function getMissedCallRecoverySettings(userId: string) {
   const supabase = createAdminClient();
-  const { data, error } = await supabase.auth.admin.getUserById(userId);
+  const businessAccount =
+    (await getBusinessAccountByBusinessId(userId)) ??
+    (await getBusinessAccountByUserId(userId));
+  const settingsUserId = businessAccount?.userId ?? userId;
+  const { data, error } = await supabase.auth.admin.getUserById(settingsUserId);
 
   if (error) {
     throw error;
   }
 
-  const businessAccount = await getBusinessAccountByUserId(userId);
-
   return readMissedCallRecoverySettingsForUser(
     {
-      id: userId,
+      id: settingsUserId,
       app_metadata: data.user?.app_metadata
     },
     businessAccount
