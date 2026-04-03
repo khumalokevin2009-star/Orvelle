@@ -21,27 +21,11 @@ function classifyLoginFailure(error: unknown): {
   if (
     normalized.includes("missing required supabase environment variable") ||
     normalized.includes("next_public_supabase_url") ||
-    normalized.includes("next_public_supabase_publishable_key") ||
-    normalized.includes("invalid api key") ||
-    normalized.includes("invalid apikey")
+    normalized.includes("next_public_supabase_publishable_key")
   ) {
     return {
       code: "config_error",
       message: "Login is temporarily unavailable. Please try again later.",
-      logMessage: message
-    };
-  }
-
-  if (
-    normalized.includes("fetch failed") ||
-    normalized.includes("network") ||
-    normalized.includes("timed out") ||
-    normalized.includes("econnrefused") ||
-    normalized.includes("enotfound")
-  ) {
-    return {
-      code: "auth_unavailable",
-      message: "Authentication service is temporarily unavailable. Please try again shortly.",
       logMessage: message
     };
   }
@@ -126,33 +110,10 @@ export async function POST(request: Request) {
     );
   }
 
-  let signInResult;
-
-  try {
-    signInResult = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
-  } catch (error) {
-    const failure = classifyLoginFailure(error);
-
-    console.error("[auth-login] Supabase password sign-in request crashed.", {
-      email,
-      code: failure.code,
-      message: failure.logMessage
-    });
-
-    return NextResponse.json(
-      {
-        ok: false,
-        code: failure.code,
-        message: failure.message
-      },
-      { status: failure.code === "config_error" ? 500 : 503 }
-    );
-  }
-
-  const { data, error } = signInResult;
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  });
 
   if (error) {
     const failure = classifyLoginFailure(error);
