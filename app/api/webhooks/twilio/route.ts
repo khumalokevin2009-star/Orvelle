@@ -15,6 +15,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const DEFAULT_MISSED_CALL_REVENUE_ESTIMATE = 240;
 const MISSED_DIAL_STATUSES = new Set(["busy", "failed", "canceled", "no-answer", "noanswer"]);
+const SUCCESSFUL_DIAL_STATUSES = new Set(["completed", "answered"]);
 const FALLBACK_FORWARD_NUMBER = process.env.TWILIO_VOICE_FORWARD_NUMBER?.trim() || null;
 const UK_DEFAULT_COUNTRY_CODE = "+44";
 
@@ -133,6 +134,11 @@ function isDialCallback(params: URLSearchParams, requestUrl: string) {
 function isMissedDialStatus(dialStatus: string | undefined) {
   const normalizedStatus = normalizeDialStatus(dialStatus);
   return normalizedStatus ? MISSED_DIAL_STATUSES.has(normalizedStatus) : false;
+}
+
+function isSuccessfulDialStatus(dialStatus: string | undefined) {
+  const normalizedStatus = normalizeDialStatus(dialStatus);
+  return normalizedStatus ? SUCCESSFUL_DIAL_STATUSES.has(normalizedStatus) : false;
 }
 
 function getWebhookTimestamp(params: URLSearchParams) {
@@ -704,6 +710,14 @@ export async function POST(request: Request) {
   await markIntegrationConnected(accountIdentifier, eventTimestamp);
 
   if (isDialCallback(params, request.url)) {
+    console.info("[twilio-voice-webhook] DialCallStatus received.", {
+      accountIdentifier: accountIdentifier ?? undefined,
+      callSid,
+      from,
+      to,
+      dialStatus: dialStatus ?? null
+    });
+
     if (isMissedDialStatus(dialStatus)) {
       const ingestion = await persistMissedInboundCall(params, accountIdentifier);
 
@@ -738,14 +752,33 @@ export async function POST(request: Request) {
             }).catch(() => undefined);
           }
         }
+      } else {
+        console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because the missed call record was already present.", {
+          accountIdentifier: accountIdentifier ?? undefined,
+          callSid,
+          dialStatus: dialStatus ?? null,
+          callId: ingestion.callId,
+          duplicate: ingestion.duplicate
+        });
       }
     } else {
-      console.info("[twilio-voice-webhook] Forwarded call completed without missed-call recovery.", {
-        callSid,
-        from,
-        to,
-        dialStatus
-      });
+      if (isSuccessfulDialStatus(dialStatus)) {
+        console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because the forwarded call connected successfully.", {
+          accountIdentifier: accountIdentifier ?? undefined,
+          callSid,
+          from,
+          to,
+          dialStatus
+        });
+      } else {
+        console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because DialCallStatus did not qualify for recovery.", {
+          accountIdentifier: accountIdentifier ?? undefined,
+          callSid,
+          from,
+          to,
+          dialStatus
+        });
+      }
     }
 
     return createXmlResponse(buildCompletionTwiml());
