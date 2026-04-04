@@ -16,16 +16,20 @@ export default async function CallPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const demoRecord = getDemoCallRecordView(id);
-
-  if (demoRecord) {
-    return <CallRecordPage initialRow={demoRecord.row} detail={demoRecord.detail} />;
-  }
-
   const businessAccount = await getCurrentBusinessAccount();
 
   if (!businessAccount) {
     redirect("/login");
+  }
+
+  const demoRecord = getDemoCallRecordView(id);
+
+  if (demoRecord) {
+    if (businessAccount.solutionMode === "service_business_missed_call_recovery") {
+      notFound();
+    }
+
+    return <CallRecordPage initialRow={demoRecord.row} detail={demoRecord.detail} />;
   }
 
   const supabase = createAdminClient();

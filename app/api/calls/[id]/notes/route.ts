@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { appendStoredCallNote, getLatestStoredCallNote, getStoredCallNoteCount } from "@/lib/call-notes";
 import { getCurrentBusinessAccount } from "@/lib/business-account";
+import { isPersistedCallRecordId } from "@/lib/dashboard-calls";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type AnalysisNoteRecord = {
@@ -40,6 +41,15 @@ export async function POST(
     return NextResponse.json(
       {
         message: "A note is required."
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!isPersistedCallRecordId(id)) {
+    return NextResponse.json(
+      {
+        message: "Notes are only available for saved call records."
       },
       { status: 400 }
     );

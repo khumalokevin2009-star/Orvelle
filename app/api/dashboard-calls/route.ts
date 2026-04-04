@@ -116,6 +116,7 @@ export async function GET() {
 
   console.info("[dashboard-calls] Query completed.", {
     businessId: businessAccount.businessId,
+    solutionMode: businessAccount.solutionMode,
     callsReturned: calls?.length ?? 0,
     analysesReturned: analyses.length,
     transcriptsReturned: transcriptRows.length
@@ -135,7 +136,10 @@ export async function GET() {
     )
   );
 
-  const useDemoData = shouldUseDemoDashboardData(mappedRows);
+  const useDemoData =
+    businessAccount.solutionMode === "service_business_missed_call_recovery"
+      ? false
+      : shouldUseDemoDashboardData(mappedRows);
 
   return NextResponse.json({
     mode: useDemoData ? "demo" : "live",

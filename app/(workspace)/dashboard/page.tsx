@@ -12,12 +12,14 @@ import { type CallTableRow } from "@/data/mock-platform-data";
 import {
   buildTrendData,
   buildMissedCallRecoveryRows,
+  getServiceCallerIdentity,
+  isPersistedCallRecordId,
   getLastUpdatedLabel,
   isMissedCallRecoveryCandidate,
   isWithinDateRange,
   type DashboardCallRow
 } from "@/lib/dashboard-calls";
-import { demoMissedCallRecoveryRows, demoTrendByRange } from "@/lib/demo-dashboard-data";
+import { demoTrendByRange } from "@/lib/demo-dashboard-data";
 import { useCurrentBusinessAccount } from "@/components/solution-mode-provider";
 import {
   formatServiceAnsweredCallOutcomeLabel,
@@ -166,6 +168,10 @@ function getServiceNoteSummary(row: DashboardCallRow) {
   }
 
   return `${noteCount} note${noteCount === 1 ? "" : "s"} saved`;
+}
+
+function getDashboardCallerLabel(row: DashboardCallRow, isServiceBusinessMode: boolean) {
+  return isServiceBusinessMode ? getServiceCallerIdentity(row.phone) : row.caller;
 }
 
 function getRowActionStatus(row: CallTableRow) {
@@ -589,13 +595,15 @@ function ServiceMissedCallsSection({
         {rows.length > 0 ? (
           rows.map((row) => {
             const statusLabel = getServiceMissedCallStatus(row);
+            const callerLabel = getDashboardCallerLabel(row, true);
+            const canSaveNote = isPersistedCallRecordId(row.id);
 
             return (
               <div key={row.id} className="px-5 py-5 sm:px-6">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2.5">
-                      <h3 className="type-section-title text-[17px]">{row.caller}</h3>
+                      <h3 className="type-section-title text-[17px]">{callerLabel}</h3>
                       <span
                         className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getServiceMissedCallStatusClasses(
                           statusLabel
@@ -604,7 +612,6 @@ function ServiceMissedCallsSection({
                         {statusLabel}
                       </span>
                     </div>
-                    <div className="type-muted-text mt-1.5 text-[13px]">{row.phone}</div>
                     <div className="type-body-text mt-2 text-[14px] leading-6">{row.date}</div>
                     <div className="type-muted-text mt-1.5 text-[13px]">{getServiceNoteSummary(row)}</div>
                   </div>
@@ -620,7 +627,9 @@ function ServiceMissedCallsSection({
                     <button
                       type="button"
                       onClick={() => onAddNote(row)}
-                      className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                      disabled={!canSaveNote}
+                      title={!canSaveNote ? "Notes are only available for saved live call records." : undefined}
+                      className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
                     >
                       Add note
                     </button>
@@ -681,12 +690,16 @@ function ServiceAnsweredCallsSection({
 
       <div className="divide-y divide-[#E5E7EB]">
         {rows.length > 0 ? (
-          rows.map((row) => (
+          rows.map((row) => {
+            const callerLabel = getDashboardCallerLabel(row, true);
+            const canSaveNote = isPersistedCallRecordId(row.id);
+
+            return (
             <div key={row.id} className="px-5 py-5 sm:px-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <h3 className="type-section-title text-[17px]">{row.caller}</h3>
+                    <h3 className="type-section-title text-[17px]">{callerLabel}</h3>
                     <span
                       className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${
                         row.transcriptAvailable
@@ -694,7 +707,7 @@ function ServiceAnsweredCallsSection({
                           : "border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280]"
                       }`}
                     >
-                      {row.transcriptAvailable ? "Transcript Available" : "Transcript Not Available"}
+                      {row.transcriptAvailable ? "Transcript ready" : "No transcript yet"}
                     </span>
                     <span
                       className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getAnsweredCallOutcomeClasses(
@@ -704,7 +717,6 @@ function ServiceAnsweredCallsSection({
                       {formatServiceAnsweredCallOutcomeLabel(row.callOutcome)}
                     </span>
                   </div>
-                  <div className="type-muted-text mt-1.5 text-[13px]">{row.phone}</div>
                   <div className="type-body-text mt-2 text-[14px] leading-6">{row.date}</div>
                   <div className="type-muted-text mt-1.5 text-[13px]">
                     Duration: {formatCallDuration(row.startedAtRaw, row.endedAtRaw)}
@@ -723,7 +735,9 @@ function ServiceAnsweredCallsSection({
                   <button
                     type="button"
                     onClick={() => onAddNote(row)}
-                    className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                    disabled={!canSaveNote}
+                    title={!canSaveNote ? "Notes are only available for saved live call records." : undefined}
+                    className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
                   >
                     Add Note
                   </button>
@@ -752,7 +766,8 @@ function ServiceAnsweredCallsSection({
                 ) : null}
               </div>
             </div>
-          ))
+          );
+          })
         ) : (
           <div className="px-5 py-10 text-center sm:px-6">
             <div className="type-body-text text-[15px]">{emptyMessage}</div>
@@ -795,14 +810,8 @@ export default function HomePage() {
   );
 
   const recoveryRowsInSelectedRange = useMemo(() => {
-    const recoveryRows = buildMissedCallRecoveryRows(rowsInSelectedRange);
-
-    if (dashboardMode === "demo" && recoveryRows.length === 0) {
-      return demoMissedCallRecoveryRows.filter((row) => isWithinDateRange(row.startedAtRaw, selectedRange));
-    }
-
-    return recoveryRows;
-  }, [dashboardMode, rowsInSelectedRange, selectedRange]);
+    return buildMissedCallRecoveryRows(rowsInSelectedRange);
+  }, [rowsInSelectedRange]);
 
   const missedRevenueTrendData = useMemo(
     () =>
@@ -1228,6 +1237,10 @@ export default function HomePage() {
   }
 
   async function saveNoteForRow(row: DashboardCallRow, note: string) {
+    if (!isPersistedCallRecordId(row.id)) {
+      throw new Error("Notes are only available for saved live call records.");
+    }
+
     const response = await fetch(`/api/calls/${row.id}/notes`, {
       method: "POST",
       headers: {
@@ -1303,7 +1316,14 @@ export default function HomePage() {
   }
 
   async function handleAddServiceCallNote(row: DashboardCallRow) {
-    const note = window.prompt(`Enter a note for ${row.caller}`);
+    const callerLabel = getDashboardCallerLabel(row, true);
+
+    if (!isPersistedCallRecordId(row.id)) {
+      setNotice("Notes are only available for saved live call records.");
+      return;
+    }
+
+    const note = window.prompt(`Enter a note for ${callerLabel}`);
 
     if (!note?.trim()) {
       return;
@@ -1321,7 +1341,7 @@ export default function HomePage() {
           ? currentRow.notes
           : [savedNote.latestNote, ...currentRow.notes]
       }));
-      setNotice(`Note saved for ${row.caller}.`);
+      setNotice(`Note saved for ${callerLabel}.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to save the note right now.");
     }
@@ -1335,6 +1355,8 @@ export default function HomePage() {
     row: DashboardCallRow,
     outcome: ServiceAnsweredCallOutcome
   ) {
+    const callerLabel = getDashboardCallerLabel(row, true);
+
     updateRow(row.id, (currentRow) => ({
       ...currentRow,
       callOutcome: outcome,
@@ -1343,10 +1365,12 @@ export default function HomePage() {
         : [`Outcome recorded: ${formatServiceAnsweredCallOutcomeLabel(outcome)}`, ...currentRow.notes]
     }));
     setActiveAnsweredOutcomeRowId(null);
-    setNotice(`Outcome recorded for ${row.caller}.`);
+    setNotice(`Outcome recorded for ${callerLabel}.`);
   }
 
   async function handleMarkCalledBack(row: DashboardCallRow) {
+    const callerLabel = getDashboardCallerLabel(row, true);
+
     try {
       const savedNote = await saveNoteForRow(row, SERVICE_MISSED_CALL_CALLED_BACK_NOTE);
 
@@ -1359,10 +1383,10 @@ export default function HomePage() {
         latestNotePreview: savedNote.latestNote,
         noteCount: savedNote.noteCount ?? (currentRow.noteCount ?? 0) + 1,
         notes: currentRow.notes.includes(savedNote.latestNote)
-          ? currentRow.notes
-          : [savedNote.latestNote, ...currentRow.notes]
+            ? currentRow.notes
+            : [savedNote.latestNote, ...currentRow.notes]
       }));
-      setNotice(`Marked ${row.caller} as called back.`);
+      setNotice(`Marked ${callerLabel} as called back.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to update the call status right now.");
     }
@@ -1373,8 +1397,10 @@ export default function HomePage() {
   }
 
   function handleAssignFollowUp(row: DashboardCallRow) {
+    const callerLabel = getDashboardCallerLabel(row, isServiceBusinessMode);
+
     if (getRowActionStatus(row) === "No Action Needed") {
-      setNotice(`${row.caller} does not require further action.`);
+      setNotice(`${callerLabel} does not require further action.`);
       return;
     }
 
@@ -1389,18 +1415,20 @@ export default function HomePage() {
       };
     });
 
-    setNotice(`Follow-up ownership assigned for ${row.caller}.`);
+    setNotice(`Follow-up ownership assigned for ${callerLabel}.`);
   }
 
   function handleMarkResolved(row: DashboardCallRow) {
+    const callerLabel = getDashboardCallerLabel(row, isServiceBusinessMode);
+
     if (getRowActionStatus(row) === "No Action Needed") {
-      setNotice(`${row.caller} is already marked as resolved.`);
+      setNotice(`${callerLabel} is already marked as resolved.`);
       return;
     }
 
     if (!isServiceBusinessMode) {
       updateRow(row.id, buildResolvedRow);
-      setNotice(`Case resolved for ${row.caller}.`);
+      setNotice(`Case resolved for ${callerLabel}.`);
       return;
     }
 
@@ -1413,10 +1441,10 @@ export default function HomePage() {
           latestNotePreview: savedNote.latestNote,
           noteCount: savedNote.noteCount ?? (currentRow.noteCount ?? 0) + 1,
           notes: currentRow.notes.includes(savedNote.latestNote)
-            ? currentRow.notes
-            : [savedNote.latestNote, ...currentRow.notes]
+              ? currentRow.notes
+              : [savedNote.latestNote, ...currentRow.notes]
         }));
-        setNotice(`Marked ${row.caller} as resolved.`);
+        setNotice(`Marked ${callerLabel} as resolved.`);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Unable to update the call status right now.");
       }

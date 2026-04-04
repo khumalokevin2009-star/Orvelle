@@ -6,7 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useSolutionMode } from "@/components/solution-mode-provider";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { getServiceMissedCallStatus, SERVICE_MISSED_CALL_CALLED_BACK_NOTE, SERVICE_MISSED_CALL_RESOLVED_NOTE } from "@/lib/service-missed-call-status";
-import type { DashboardCallRow } from "@/lib/dashboard-calls";
+import { getServiceCallerIdentity, isPersistedCallRecordId, type DashboardCallRow } from "@/lib/dashboard-calls";
 import type { CallRecordDetail, TranscriptEntry } from "@/lib/call-detail";
 import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
 import { defaultSolutionMode, type SolutionMode } from "@/lib/solution-mode";
@@ -271,14 +271,18 @@ export function CallRecordPage({
   const manualAnsweredCallOutcome = normalizeServiceAnsweredCallOutcome(row.callOutcome);
   const serviceMissedCallStatus =
     isServiceBusinessMode && isMissedCallRecovery ? getServiceMissedCallStatus(row) : null;
+  const serviceCallerLabel = getServiceCallerIdentity(row.phone);
+  const callerLabel = isServiceBusinessMode ? serviceCallerLabel : row.caller;
+  const canPersistCallNote = isPersistedCallRecordId(row.id);
   const historyEntries = isMissedCallRecovery ? buildMissedCallHistory(row) : [];
   const recoveryOutcome = isMissedCallRecovery ? getMissedCallRecoveryOutcome(row) : null;
   const recoveredValue = isMissedCallRecovery ? getMissedCallRecoveredValue(row) : 0;
   const resolutionReason = isMissedCallRecovery ? getMissedCallResolutionReason(row) : null;
   const bookingCreatedLabel = isMissedCallRecovery ? getMissedCallBookingCreatedLabel(row) : null;
   const currentWorkflowStatus = isMissedCallRecovery ? getMissedCallWorkflowStatus(row) : null;
-  const backHref = isMissedCallRecovery ? "/missed-calls" : "/dashboard";
-  const backLabel = isMissedCallRecovery ? copy.callRecord.backLabel : "Back to Dashboard";
+  const backHref = isServiceBusinessMode ? "/dashboard" : isMissedCallRecovery ? "/missed-calls" : "/dashboard";
+  const backLabel =
+    isServiceBusinessMode || !isMissedCallRecovery ? "Back to Dashboard" : copy.callRecord.backLabel;
   const primaryStatusValue = isMissedCallRecovery
     ? (currentWorkflowStatus ?? "Action Required")
     : operationalOutcome;
@@ -341,6 +345,10 @@ export function CallRecordPage({
   }, []);
 
   async function saveCallNote(note: string) {
+    if (!canPersistCallNote) {
+      throw new Error("Notes are only available for saved live call records.");
+    }
+
     const response = await fetch(`/api/calls/${row.id}/notes`, {
       method: "POST",
       headers: {
@@ -539,7 +547,13 @@ export function CallRecordPage({
   }
 
   async function handleAddNote() {
-    const note = window.prompt(`Enter an operational note for ${row.caller}`);
+    if (!canPersistCallNote) {
+      setNoticeTone("error");
+      setNotice("Notes are only available for saved live call records.");
+      return;
+    }
+
+    const note = window.prompt(`Enter an operational note for ${callerLabel}`);
 
     if (!note?.trim()) {
       return;
@@ -780,7 +794,7 @@ export function CallRecordPage({
 
             <div className={`mt-5 grid gap-5 ${isServiceBusinessMode ? "" : "xl:grid-cols-[minmax(0,1.25fr)_340px]"}`}>
               <div>
-                <h2 className="type-page-title text-[32px] leading-[1.02] sm:text-[36px]">{row.caller}</h2>
+                <h2 className="type-page-title text-[32px] leading-[1.02] sm:text-[36px]">{callerLabel}</h2>
                 <p className="type-body-text mt-3 max-w-[820px] text-[15px] leading-7">{row.summary}</p>
 
                 <div
@@ -949,11 +963,12 @@ export function CallRecordPage({
             </div>
           </section>
 
+          {!isServiceBusinessMode || isServiceAnsweredCall ? (
           <CardSection
             title="Transcript"
             description={
               isServiceBusinessMode
-                ? "Simple conversation record for the team to review."
+                ? "Conversation record for answered calls when transcription is available."
                 : "Readable conversation record for operational review, issue confirmation, and next-step planning."
             }
           >
@@ -1001,6 +1016,7 @@ export function CallRecordPage({
               </div>
             )}
           </CardSection>
+          ) : null}
 
           {!isServiceBusinessMode ? (
             <CardSection
@@ -1297,7 +1313,9 @@ export function CallRecordPage({
               <button
                 type="button"
                 onClick={handleAddNote}
-                className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                disabled={!canPersistCallNote}
+                title={!canPersistCallNote ? "Notes are only available for saved live call records." : undefined}
+                className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
               >
                 Add Note
               </button>

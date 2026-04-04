@@ -79,6 +79,16 @@ export type SupabaseTranscriptStatusRecord = {
   call_id: string;
 };
 
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const placeholderCallerValues = new Set([
+  "",
+  "phone number placeholder",
+  "unknown caller",
+  "unknown number"
+]);
+
 function formatDisplayLabel(value: string | null | undefined, fallback: string) {
   if (!value?.trim()) {
     return fallback;
@@ -90,6 +100,20 @@ function formatDisplayLabel(value: string | null | undefined, fallback: string) 
     .filter(Boolean)
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ");
+}
+
+export function isPersistedCallRecordId(id: string) {
+  return uuidPattern.test(id.trim());
+}
+
+export function getServiceCallerIdentity(phone: string | null | undefined) {
+  const normalizedPhone = phone?.trim() ?? "";
+
+  if (!normalizedPhone || placeholderCallerValues.has(normalizedPhone.toLowerCase())) {
+    return "Unknown caller";
+  }
+
+  return normalizedPhone;
 }
 
 function formatCurrency(value: number, currencyCode: string | null) {
@@ -724,7 +748,7 @@ export function mapSupabaseCallToDashboardRow(
           : noteBottom,
     category,
     periodByRange: getPeriodByRange(record.started_at),
-    phone: record.caller_phone ?? "Phone number placeholder",
+    phone: getServiceCallerIdentity(record.caller_phone),
     date: formatCallTimestamp(record.started_at),
     summary: isMissedCallRecoveryCase ? recoverySummary : getSummary(record, status, category, analysis),
     nextStep: isMissedCallRecoveryCase ? recoveryNextStep : getNextStep(record, status, category, analysis),

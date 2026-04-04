@@ -41,6 +41,7 @@ export function DashboardShell({
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const copy = getSolutionModeCopy(solutionMode);
+  const shouldHideRecoveryNav = solutionMode === "service_business_missed_call_recovery";
   const navItems = [
     {
       href: "/dashboard",
@@ -79,7 +80,7 @@ export function DashboardShell({
       matches: (currentPathname: string) =>
         currentPathname === "/settings" || currentPathname.startsWith("/settings/")
     }
-  ] as const;
+  ].filter((item) => !shouldHideRecoveryNav || item.href !== "/missed-calls");
   const activeNavItem = navItems.find(({ matches }) => matches(pathname)) ?? navItems[0];
 
   async function handleSignOut() {
@@ -187,7 +188,11 @@ export function DashboardShell({
       </div>
 
       <nav className="fixed inset-x-3 bottom-3 z-40 lg:hidden">
-        <div className="grid grid-cols-5 gap-1 rounded-[20px] border border-[#E5E7EB] bg-[rgba(255,255,255,0.94)] p-1.5 shadow-[0_20px_40px_rgba(17,24,39,0.12)] backdrop-blur-[18px]">
+        <div
+          className={`grid gap-1 rounded-[20px] border border-[#E5E7EB] bg-[rgba(255,255,255,0.94)] p-1.5 shadow-[0_20px_40px_rgba(17,24,39,0.12)] backdrop-blur-[18px] ${
+            navItems.length === 4 ? "grid-cols-4" : "grid-cols-5"
+          }`}
+        >
           {navItems.map(({ href, icon: Icon, label, mobileLabel, matches }) => {
             const isActive = matches(pathname);
 
