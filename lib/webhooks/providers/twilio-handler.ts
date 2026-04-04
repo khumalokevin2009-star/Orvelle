@@ -9,6 +9,10 @@ import {
   type TwilioCallPayload,
   type TwilioWebhookEventType
 } from "@/providers/twilio";
+import {
+  getTwilioRecordingFileName,
+  storeTwilioRecordingInSupabase
+} from "@/lib/twilio-recordings";
 
 type ProviderValidationResult =
   | { ok: true }
@@ -42,15 +46,6 @@ type ParsedTwilioWebhookResult = {
 };
 
 type SupabaseAdminClient = ReturnType<typeof createAdminClient>;
-
-function getRecordingFileName(recordingUrl?: string) {
-  if (!recordingUrl) {
-    return null;
-  }
-
-  const lastSegment = recordingUrl.split("/").pop()?.trim();
-  return lastSegment || null;
-}
 
 async function findExistingCall(
   supabase: SupabaseAdminClient,
@@ -95,7 +90,7 @@ async function insertTwilioCall(
     supabase,
     businessId,
     callerName: parsedWebhook.payload.phone_number,
-    recordingFileName: getRecordingFileName(parsedWebhook.payload.recording_url)
+    recordingFileName: getTwilioRecordingFileName(parsedWebhook.payload.recording_url)
   });
 
   if (!ingestedCall.callId) {
@@ -231,7 +226,7 @@ async function handleRecordingCompleted(
     businessId
   );
   const recordingUrl = parsedWebhook.payload.recording_url ?? null;
-  const recordingFileName = getRecordingFileName(recordingUrl ?? undefined);
+  const recordingFileName = getTwilioRecordingFileName(recordingUrl);
 
   if (!recordingUrl) {
     return {
@@ -247,8 +242,33 @@ async function handleRecordingCompleted(
     };
   }
 
+  const storedRecording = await storeTwilioRecordingInSupabase({
+    supabase,
+    recordingUrl,
+    callSid: parsedWebhook.payload.external_call_id,
+    preferredFileName: recordingFileName
+  });
+
   if (!existingCall?.id) {
-    const callId = await insertTwilioCall(supabase, parsedWebhook, businessId);
+    const ingestedCall = await ingestCall(
+      {
+        ...parsedWebhook.payload,
+        recording_url: storedRecording.audioUrl
+      },
+      {
+        supabase,
+        businessId,
+        callerName: parsedWebhook.payload.phone_number,
+        recordingFileName: storedRecording.recordingFileName,
+        status: parsedWebhook.payload.answered ? "under_review" : "action_required"
+      }
+    );
+
+    const callId = ingestedCall.callId;
+
+    if (!callId) {
+      throw new Error("Twilio recording ingestion completed without returning a call id.");
+    }
 
     return {
       status: 201,
@@ -261,7 +281,7 @@ async function handleRecordingCompleted(
   }
 
   const alreadyAttached =
-    existingCall.audio_url === recordingUrl &&
+    Boolean(existingCall.audio_url) &&
     existingCall.recording_filename === recordingFileName;
 
   if (alreadyAttached) {
@@ -287,8 +307,8 @@ async function handleRecordingCompleted(
       caller_phone: existingCall.caller_phone ?? parsedWebhook.payload.phone_number,
       started_at: startedAt,
       ended_at: existingCall.ended_at ?? endedAt,
-      audio_url: recordingUrl,
-      recording_filename: recordingFileName,
+      audio_url: storedRecording.audioUrl,
+      recording_filename: storedRecording.recordingFileName,
       source_system: parsedWebhook.payload.provider,
       status: parsedWebhook.payload.answered ? "under_review" : "action_required"
     })

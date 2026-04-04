@@ -18,6 +18,11 @@ import {
   type BusinessVertical,
   type SolutionMode
 } from "@/lib/solution-mode";
+import {
+  defaultServiceCallRoutingMode,
+  serviceCallRoutingModeOptions,
+  type ServiceCallRoutingMode
+} from "@/lib/service-call-routing-mode";
 
 type UserAccessRecord = {
   id: string;
@@ -88,6 +93,7 @@ export default function SettingsPage() {
     timezone: "Europe/London"
   });
   const [missedCallRecovery, setMissedCallRecovery] = useState({
+    callRoutingMode: defaultServiceCallRoutingMode as ServiceCallRoutingMode,
     defaultCallbackWindow: "2 business hours",
     autoFollowUpEnabled: true,
     smsTemplate:
@@ -170,6 +176,7 @@ export default function SettingsPage() {
                 businessName?: string;
                 solutionMode?: SolutionMode;
                 businessVertical?: BusinessVertical;
+                callRoutingMode?: ServiceCallRoutingMode;
                 callbackNumber?: string;
                 defaultCallbackWindow?: string;
                 businessHours?: string;
@@ -197,6 +204,8 @@ export default function SettingsPage() {
           businessHours: payload.settings?.businessHours || current.businessHours
         }));
         setMissedCallRecovery({
+          callRoutingMode:
+            payload.settings?.callRoutingMode || defaultServiceCallRoutingMode,
           defaultCallbackWindow:
             payload.settings?.defaultCallbackWindow || "2 business hours",
           autoFollowUpEnabled: payload.settings?.autoFollowUpEnabled ?? true,
@@ -255,6 +264,15 @@ export default function SettingsPage() {
       return;
     }
 
+    if (
+      missedCallRecovery.callRoutingMode === "full_call_capture" &&
+      !businessProfile.callbackNumber.trim()
+    ) {
+      setRecoverySettingsNoticeTone("error");
+      setRecoverySettingsNotice("Answer / callback number is required when full call capture is enabled.");
+      return;
+    }
+
     if (missedCallRecovery.autoFollowUpEnabled && !businessProfile.callbackNumber.trim()) {
       setRecoverySettingsNoticeTone("error");
       setRecoverySettingsNotice("Callback number is required when auto follow-up is enabled.");
@@ -281,6 +299,7 @@ export default function SettingsPage() {
             businessName: businessProfile.businessName,
             solutionMode: businessProfile.solutionMode,
             businessVertical: businessProfile.businessVertical,
+            callRoutingMode: missedCallRecovery.callRoutingMode,
             callbackNumber: businessProfile.callbackNumber,
             defaultCallbackWindow: missedCallRecovery.defaultCallbackWindow,
             businessHours: businessProfile.businessHours,
@@ -433,7 +452,7 @@ export default function SettingsPage() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Callback Number">
+                <Field label="Answer / Callback Number">
                   <input
                     type="tel"
                     value={businessProfile.callbackNumber}
@@ -467,7 +486,7 @@ export default function SettingsPage() {
 
           <SectionCard
             title="Missed Call Recovery"
-            description="Configure the default callback promise, automated follow-up behavior, and SMS copy used when recovery actions are triggered from missed call workflows."
+            description="Configure inbound call routing, the default callback promise, automated follow-up behavior, and SMS copy used when recovery actions are triggered from missed call workflows."
             actions={
               <button
                 type="button"
@@ -501,6 +520,24 @@ export default function SettingsPage() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Call Routing Mode">
+                  <select
+                    value={missedCallRecovery.callRoutingMode}
+                    onChange={(event) =>
+                      setMissedCallRecovery((current) => ({
+                        ...current,
+                        callRoutingMode: event.target.value as ServiceCallRoutingMode
+                      }))
+                    }
+                    className={inputClassName}
+                  >
+                    {serviceCallRoutingModeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
                 <Field label="Default Callback Window">
                   <input
                     type="text"
@@ -528,6 +565,20 @@ export default function SettingsPage() {
                     }
                   />
                 </div>
+              </div>
+
+              <div className="rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-4 py-4">
+                <div className="type-label-text text-[12px]">Routing mode summary</div>
+                <p className="type-body-text mt-2 text-[14px] leading-6">
+                  {
+                    serviceCallRoutingModeOptions.find(
+                      (option) => option.value === missedCallRecovery.callRoutingMode
+                    )?.description
+                  }
+                </p>
+                <p className="type-body-text mt-2 text-[13px] leading-6 text-[#6B7280]">
+                  Orvelle uses the saved answer / callback number above as the live destination number when Twilio forwards or captures inbound calls for this business.
+                </p>
               </div>
 
               <Field label="Default Missed-Call SMS Template">

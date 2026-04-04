@@ -137,6 +137,8 @@ function formatMonitoringLabel(type: "call_ingested" | "ingestion_failed" | "ana
 export function IntegrationSettingsPage({
   accountIdentifier,
   webhookUrl,
+  callRoutingMode,
+  answerNumber,
   status,
   connectionHealth,
   statusDescription,
@@ -268,6 +270,18 @@ export function IntegrationSettingsPage({
                 onCopy={() => handleCopy(accountIdentifier, "account")}
                 copyLabel="Copy ID"
                 copied={copiedField === "account"}
+              />
+              <ValueField
+                label="Current Call Routing Mode"
+                value={
+                  callRoutingMode === "full_call_capture"
+                    ? "Full call capture"
+                    : "Missed-call-only forwarding"
+                }
+              />
+              <ValueField
+                label="Saved Answer / Callback Number"
+                value={answerNumber || "Not configured yet"}
               />
             </div>
 

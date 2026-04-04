@@ -9,6 +9,12 @@ import {
   type SolutionMode
 } from "@/lib/solution-mode";
 import {
+  defaultServiceCallRoutingMode,
+  normalizeServiceCallRoutingMode,
+  serviceCallRoutingModeOptions,
+  type ServiceCallRoutingMode
+} from "@/lib/service-call-routing-mode";
+import {
   getBusinessAccountByBusinessId,
   getBusinessAccountByUserId,
   mergeBusinessAccountMetadata,
@@ -22,6 +28,7 @@ export type MissedCallRecoverySettings = {
   businessName: string;
   solutionMode: SolutionMode;
   businessVertical: BusinessVertical;
+  callRoutingMode: ServiceCallRoutingMode;
   callbackNumber: string;
   defaultCallbackWindow: string;
   businessHours: string;
@@ -37,10 +44,18 @@ type MissedCallRecoverySettingsRecord = Partial<Omit<MissedCallRecoverySettings,
 const defaultSmsTemplate =
   "Sorry we missed your call. This is {{businessName}}. We’ve received your enquiry and will call you back within {{callbackWindow}}. If urgent, call us on {{phoneNumber}}.";
 
+export {
+  defaultServiceCallRoutingMode,
+  normalizeServiceCallRoutingMode,
+  serviceCallRoutingModeOptions
+} from "@/lib/service-call-routing-mode";
+export type { ServiceCallRoutingMode } from "@/lib/service-call-routing-mode";
+
 export const defaultMissedCallRecoverySettings: MissedCallRecoverySettings = {
   businessName: "Cotrnested Services Ltd.",
   solutionMode: defaultSolutionMode,
   businessVertical: defaultBusinessVertical,
+  callRoutingMode: defaultServiceCallRoutingMode,
   callbackNumber: "",
   defaultCallbackWindow: "2 business hours",
   businessHours: "Mon-Fri, 08:00-18:00",
@@ -68,6 +83,7 @@ export function normalizeMissedCallRecoverySettings(
     businessName: input?.businessName?.trim() || defaultMissedCallRecoverySettings.businessName,
     solutionMode: normalizeSolutionMode(input?.solutionMode),
     businessVertical: normalizeBusinessVertical(input?.businessVertical),
+    callRoutingMode: normalizeServiceCallRoutingMode(input?.callRoutingMode),
     callbackNumber: input?.callbackNumber?.trim() || defaultMissedCallRecoverySettings.callbackNumber,
     defaultCallbackWindow:
       input?.defaultCallbackWindow?.trim() || defaultMissedCallRecoverySettings.defaultCallbackWindow,
@@ -110,6 +126,10 @@ export function validateMissedCallRecoverySettings(settings: MissedCallRecoveryS
 
   if (!settings.defaultCallbackWindow.trim()) {
     errors.push("Default callback window is required.");
+  }
+
+  if (settings.callRoutingMode === "full_call_capture" && !settings.callbackNumber.trim()) {
+    errors.push("Answer / callback number is required when full call capture is enabled.");
   }
 
   if (settings.autoFollowUpEnabled && !settings.callbackNumber.trim()) {
@@ -169,6 +189,7 @@ export async function updateMissedCallRecoverySettings({
   });
 
   existingAppMetadata.orvelle_missed_call_recovery_settings = {
+    callRoutingMode: nextSettings.callRoutingMode,
     callbackNumber: nextSettings.callbackNumber,
     defaultCallbackWindow: nextSettings.defaultCallbackWindow,
     businessHours: nextSettings.businessHours,

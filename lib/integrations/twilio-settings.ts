@@ -12,10 +12,16 @@ import {
   readMonitoringSnapshot,
   type MonitoringEventRecord
 } from "@/lib/integrations/monitoring";
+import {
+  getMissedCallRecoverySettings
+} from "@/lib/missed-call-recovery-settings";
+import type { ServiceCallRoutingMode } from "@/lib/service-call-routing-mode";
 
 export type TwilioIntegrationSnapshot = {
   accountIdentifier: string;
   webhookUrl: string;
+  callRoutingMode: ServiceCallRoutingMode;
+  answerNumber: string | null;
   status: IntegrationStatus;
   connectionHealth: IntegrationConnectionHealth;
   statusDescription: string;
@@ -54,8 +60,10 @@ export async function getTwilioIntegrationSnapshot({
 }): Promise<TwilioIntegrationSnapshot> {
   const businessAccount = await ensureBusinessAccountForUser(user);
   const accountIdentifier = businessAccount.businessId;
+  const missedCallRecoverySettings = await getMissedCallRecoverySettings(accountIdentifier).catch(() => null);
   const endpointReady = Boolean(
-    process.env.TWILIO_AUTH_TOKEN &&
+    process.env.TWILIO_ACCOUNT_SID &&
+      process.env.TWILIO_AUTH_TOKEN &&
       process.env.NEXT_PUBLIC_SUPABASE_URL &&
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY &&
       process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -111,6 +119,9 @@ export async function getTwilioIntegrationSnapshot({
   return {
     accountIdentifier,
     webhookUrl: `${origin}/api/webhooks/twilio?account=${encodeURIComponent(accountIdentifier)}`,
+    callRoutingMode:
+      missedCallRecoverySettings?.callRoutingMode ?? "missed_call_only_forwarding",
+    answerNumber: missedCallRecoverySettings?.callbackNumber?.trim() || null,
     status: resolvedStatus,
     connectionHealth: resolvedHealth,
     statusDescription,
@@ -119,10 +130,14 @@ export async function getTwilioIntegrationSnapshot({
     lastErrorMessage,
     monitoring,
     instructions: [
-      "Set your Twilio voice webhook or status callback URL to the webhook URL below exactly as shown, including the account query parameter.",
-      "If Twilio is pointed at /api/webhooks/twilio without the account query parameter, Orvelle can answer the call but cannot mark your integration as connected.",
-      "Use POST with application/x-www-form-urlencoded so completed call and recording events can be validated safely.",
-      "Keep the account identifier available for internal mapping and support coordination during rollout."
+      "Set your Twilio phone number Voice webhook URL to the webhook URL below exactly as shown, including the account query parameter.",
+      "Use POST with application/x-www-form-urlencoded for the inbound voice webhook. Orvelle returns the TwiML that controls forwarding, missed-call recovery, and recording callbacks.",
+      (missedCallRecoverySettings?.callRoutingMode ?? "missed_call_only_forwarding") ===
+        "full_call_capture"
+        ? "Full call capture is enabled. Twilio must receive the inbound call first so Orvelle can record answered calls, store the recording, and queue transcription automatically before the call is bridged to your saved answer number."
+        : "Missed-call-only forwarding is enabled. Orvelle forwards the inbound call to your saved answer number and only stores calls that were not answered for recovery.",
+      "Do not point the Twilio number directly at the client’s handset or a separate Twilio Studio flow, or Orvelle will not be able to distinguish answered calls from missed calls reliably.",
+      "If Twilio is pointed at /api/webhooks/twilio without the account query parameter, Orvelle can answer the call but cannot map the activity back to the correct business."
     ]
   };
 }

@@ -1,18 +1,26 @@
 export const runtime = "nodejs";
 
+import { after } from "next/server";
+
 import {
   callsSelectFields,
   mapSupabaseCallToDashboardRow,
   type SupabaseCallRecord
 } from "@/lib/dashboard-calls";
 import { resolveBusinessAccountByIdentifier } from "@/lib/business-account";
+import { processCallAfterIngestion } from "@/lib/call-processing";
 import { ingestCall } from "@/lib/call-ingestion";
 import { appendIntegrationError } from "@/lib/integrations/error-log";
 import { updateProviderConnectionState } from "@/lib/integrations/connection-status";
 import { recordMonitoringEvent } from "@/lib/integrations/monitoring";
-import { getMissedCallRecoverySettings } from "@/lib/missed-call-recovery-settings";
+import {
+  defaultServiceCallRoutingMode,
+  getMissedCallRecoverySettings
+} from "@/lib/missed-call-recovery-settings";
 import { sendFollowUpForCall } from "@/lib/follow-up-sms";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { twilioWebhookHandler } from "@/lib/webhooks/providers/twilio-handler";
+import type { ServiceCallRoutingMode } from "@/lib/service-call-routing-mode";
 
 const DEFAULT_MISSED_CALL_REVENUE_ESTIMATE = 240;
 const MISSED_DIAL_STATUSES = new Set(["busy", "failed", "canceled", "no-answer", "noanswer"]);
@@ -25,6 +33,7 @@ type ForwardTargetResolution =
       ok: true;
       number: string;
       source: "settings" | "env";
+      routingMode: ServiceCallRoutingMode;
     }
   | {
       ok: false;
@@ -36,6 +45,7 @@ type ForwardTargetResolution =
         | "invalid_env_fallback"
         | "missing_forward_number";
       message: string;
+      routingMode: ServiceCallRoutingMode;
     };
 
 type WebhookAccountContext = {
@@ -73,10 +83,27 @@ function buildCompletionTwiml() {
   return '<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>';
 }
 
-function buildForwardDialTwiml(actionUrl: string, forwardNumber: string) {
+function buildForwardDialTwiml({
+  actionUrl,
+  forwardNumber,
+  enableFullCallCapture,
+  recordingStatusCallbackUrl
+}: {
+  actionUrl: string;
+  forwardNumber: string;
+  enableFullCallCapture?: boolean;
+  recordingStatusCallbackUrl?: string | null;
+}) {
+  const recordingAttributes =
+    enableFullCallCapture && recordingStatusCallbackUrl
+      ? ` record="record-from-answer" recordingStatusCallback="${escapeXml(
+          recordingStatusCallbackUrl
+        )}" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"`
+      : "";
+
   return `<?xml version="1.0" encoding="UTF-8"?><Response><Dial action="${escapeXml(
     actionUrl
-  )}" method="POST">${escapeXml(forwardNumber)}</Dial></Response>`;
+  )}" method="POST"${recordingAttributes}>${escapeXml(forwardNumber)}</Dial></Response>`;
 }
 
 function buildFallbackTwiml() {
@@ -98,6 +125,12 @@ function logWebhookHit(method: string, details: Record<string, string | null | u
 function buildActionUrl(requestUrl: string) {
   const actionUrl = new URL(requestUrl);
   actionUrl.searchParams.set("dial_event", "completed");
+  return actionUrl.toString();
+}
+
+function buildRecordingStatusUrl(requestUrl: string) {
+  const actionUrl = new URL(requestUrl);
+  actionUrl.searchParams.set("recording_event", "completed");
   return actionUrl.toString();
 }
 
@@ -142,6 +175,14 @@ function isDialCallback(params: URLSearchParams, requestUrl: string) {
   return (
     Boolean(getFormValue(params, "DialCallStatus")) ||
     new URL(requestUrl).searchParams.get("dial_event") === "completed"
+  );
+}
+
+function isRecordingCallback(params: URLSearchParams, requestUrl: string) {
+  return (
+    Boolean(getFormValue(params, "RecordingUrl")) ||
+    Boolean(getFormValue(params, "RecordingStatus")) ||
+    new URL(requestUrl).searchParams.get("recording_event") === "completed"
   );
 }
 
@@ -333,7 +374,8 @@ async function resolveForwardTarget(accountIdentifier: string | null): Promise<F
           return {
             ok: true,
             number: normalizedCallbackNumber,
-            source: "settings"
+            source: "settings",
+            routingMode: settings.callRoutingMode
           };
         }
 
@@ -371,14 +413,16 @@ async function resolveForwardTarget(accountIdentifier: string | null): Promise<F
       return {
         ok: true,
         number: normalizedFallbackNumber,
-        source: "env"
+        source: "env",
+        routingMode: defaultServiceCallRoutingMode
       };
     }
 
     return {
       ok: false,
       reason: "invalid_env_fallback",
-      message: "TWILIO_VOICE_FORWARD_NUMBER is present but invalid for Twilio dialing."
+      message: "TWILIO_VOICE_FORWARD_NUMBER is present but invalid for Twilio dialing.",
+      routingMode: defaultServiceCallRoutingMode
     };
   }
 
@@ -387,7 +431,8 @@ async function resolveForwardTarget(accountIdentifier: string | null): Promise<F
       ok: false,
       reason: "missing_account_identifier",
       message:
-        "No account identifier was provided on the Twilio voice webhook URL, and no env fallback forwarding number is configured."
+        "No account identifier was provided on the Twilio voice webhook URL, and no env fallback forwarding number is configured.",
+      routingMode: defaultServiceCallRoutingMode
     };
   }
 
@@ -399,7 +444,8 @@ async function resolveForwardTarget(accountIdentifier: string | null): Promise<F
         ok: false,
         reason: "missing_callback_number",
         message:
-          "No callback number is configured in missed-call recovery settings, and no env fallback forwarding number is configured."
+          "No callback number is configured in missed-call recovery settings, and no env fallback forwarding number is configured.",
+        routingMode: settings.callRoutingMode
       };
     }
 
@@ -407,14 +453,16 @@ async function resolveForwardTarget(accountIdentifier: string | null): Promise<F
       ok: false,
       reason: "invalid_callback_number",
       message:
-        "The saved callback number is invalid for Twilio dialing, and no env fallback forwarding number is configured."
+        "The saved callback number is invalid for Twilio dialing, and no env fallback forwarding number is configured.",
+      routingMode: settings.callRoutingMode
     };
   } catch {
     return {
       ok: false,
       reason: "settings_lookup_failed",
       message:
-        "The callback number could not be loaded from missed-call recovery settings, and no env fallback forwarding number is configured."
+        "The callback number could not be loaded from missed-call recovery settings, and no env fallback forwarding number is configured.",
+      routingMode: defaultServiceCallRoutingMode
     };
   }
 }
@@ -524,6 +572,138 @@ async function persistMissedInboundCall(
     callId: null,
     duplicate: false
   };
+}
+
+async function persistAnsweredInboundCall(
+  params: URLSearchParams,
+  accountContext: WebhookAccountContext
+) {
+  const callSid = getFormValue(params, "CallSid");
+  const from = getFormValue(params, "From") ?? "Unknown number";
+  const to = getFormValue(params, "To") ?? FALLBACK_FORWARD_NUMBER ?? "Unknown destination";
+  const dialStatus = getFormValue(params, "DialCallStatus");
+  const durationValue = Number(
+    getFormValue(params, "DialCallDuration") ?? getFormValue(params, "CallDuration") ?? "0"
+  );
+
+  if (!callSid) {
+    console.warn("[twilio-voice-webhook] Answered-call callback received without CallSid.", {
+      from,
+      to,
+      dialStatus
+    });
+    await recordIntegrationFailure({
+      accountIdentifier: accountContext.accountIdentifier,
+      userId: accountContext.userId,
+      message: "Answered-call callback was received without CallSid.",
+      eventType: "voice_dial_completed"
+    });
+
+    return {
+      callId: null,
+      duplicate: false
+    };
+  }
+
+  try {
+    const supabase = createAdminClient();
+    const result = await ingestCall(
+      {
+        phone_number: from,
+        timestamp: getWebhookTimestamp(params),
+        duration: Number.isFinite(durationValue) ? Math.max(0, durationValue) : 0,
+        answered: true,
+        external_call_id: callSid,
+        provider: "twilio"
+      },
+      {
+        supabase,
+        userId: accountContext.userId ?? undefined,
+        businessId: accountContext.businessId ?? undefined,
+        callerName: from,
+        status: "under_review"
+      }
+    );
+
+    console.info("[twilio-voice-webhook] Answered inbound call stored.", {
+      callSid,
+      from,
+      to,
+      dialStatus,
+      callId: result.callId,
+      businessId: accountContext.businessId,
+      duplicate: result.duplicate,
+      storedStatus: result.storedStatus
+    });
+
+    return {
+      callId: result.callId,
+      duplicate: result.duplicate
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+
+    console.error("[twilio-voice-webhook] Failed to persist answered inbound call.", {
+      callSid,
+      from,
+      to,
+      dialStatus,
+      message
+    });
+
+    await recordIntegrationFailure({
+      accountIdentifier: accountContext.accountIdentifier,
+      userId: accountContext.userId,
+      message,
+      eventType: "voice_dial_completed"
+    });
+  }
+
+  return {
+    callId: null,
+    duplicate: false
+  };
+}
+
+async function handleRecordingCallback({
+  rawBody,
+  accountContext
+}: {
+  rawBody: string;
+  accountContext: WebhookAccountContext;
+}) {
+  const supabase = createAdminClient();
+  const parsedWebhook = twilioWebhookHandler.parse({
+    rawBody,
+    contentType: "application/x-www-form-urlencoded"
+  });
+  const ingestionResult = await twilioWebhookHandler.ingest({
+    supabase,
+    parsedWebhook,
+    businessId: accountContext.businessId ?? undefined
+  });
+
+  if (
+    ingestionResult.body.callId &&
+    !ingestionResult.body.duplicate &&
+    !ingestionResult.body.warning &&
+    ingestionResult.metadata.shouldProcess !== false
+  ) {
+    const callId = ingestionResult.body.callId;
+
+    after(async () => {
+      await processCallAfterIngestion(callId, {
+        monitoringContext: accountContext.userId
+          ? {
+              userId: accountContext.userId,
+              provider: "twilio"
+            }
+          : undefined
+      });
+    });
+  }
+
+  return ingestionResult;
 }
 
 async function loadDashboardRowForCallId(
@@ -823,10 +1003,21 @@ export async function GET(request: Request) {
     method: "GET",
     accountIdentifier: accountIdentifier ?? undefined,
     source: forwardTarget.source,
-    forwardNumber: forwardTarget.number
+    forwardNumber: forwardTarget.number,
+    routingMode: forwardTarget.routingMode
   });
 
-  return createXmlResponse(buildForwardDialTwiml(buildActionUrl(request.url), forwardTarget.number));
+  return createXmlResponse(
+    buildForwardDialTwiml({
+      actionUrl: buildActionUrl(request.url),
+      forwardNumber: forwardTarget.number,
+      enableFullCallCapture: forwardTarget.routingMode === "full_call_capture",
+      recordingStatusCallbackUrl:
+        forwardTarget.routingMode === "full_call_capture"
+          ? buildRecordingStatusUrl(request.url)
+          : null
+    })
+  );
 }
 
 export async function POST(request: Request) {
@@ -854,14 +1045,58 @@ export async function POST(request: Request) {
 
   await markIntegrationConnected(accountContext.accountIdentifier, accountContext.userId, eventTimestamp);
 
+  if (isRecordingCallback(params, request.url)) {
+    console.info("[twilio-voice-webhook] Recording callback received.", {
+      accountIdentifier: accountContext.accountIdentifier ?? undefined,
+      businessId: accountContext.businessId ?? undefined,
+      callSid,
+      recordingStatus: getFormValue(params, "RecordingStatus") ?? null
+    });
+
+    try {
+      await handleRecordingCallback({
+        rawBody,
+        accountContext
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Recording callback processing failed.";
+
+      console.warn("[twilio-voice-webhook] Recording callback processing failed.", {
+        accountIdentifier: accountContext.accountIdentifier ?? undefined,
+        businessId: accountContext.businessId ?? undefined,
+        callSid,
+        message
+      });
+
+      await recordIntegrationFailure({
+        accountIdentifier: accountContext.accountIdentifier,
+        userId: accountContext.userId,
+        callId: callSid ?? null,
+        message,
+        eventType: "recording_completed"
+      });
+    }
+
+    return new Response("ok", {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8"
+      }
+    });
+  }
+
   if (isDialCallback(params, request.url)) {
+    const forwardTarget = await resolveForwardTarget(accountContext.accountIdentifier);
+
     console.info("[twilio-voice-webhook] DialCallStatus received.", {
       accountIdentifier: accountContext.accountIdentifier ?? undefined,
       businessId: accountContext.businessId ?? undefined,
       callSid,
       from,
       to,
-      dialStatus: dialStatus ?? null
+      dialStatus: dialStatus ?? null,
+      routingMode: forwardTarget.routingMode
     });
 
     if (isMissedDialStatus(dialStatus)) {
@@ -909,12 +1144,17 @@ export async function POST(request: Request) {
       }
     } else {
       if (isSuccessfulDialStatus(dialStatus)) {
+        if (forwardTarget.routingMode === "full_call_capture") {
+          await persistAnsweredInboundCall(params, accountContext);
+        }
+
         console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because the forwarded call connected successfully.", {
           accountIdentifier: accountContext.accountIdentifier ?? undefined,
           callSid,
           from,
           to,
-          dialStatus
+          dialStatus,
+          routingMode: forwardTarget.routingMode
         });
       } else {
         console.info("[twilio-voice-webhook] Automatic missed-call SMS skipped because DialCallStatus did not qualify for recovery.", {
@@ -956,8 +1196,19 @@ export async function POST(request: Request) {
     accountIdentifier: accountIdentifier ?? undefined,
     callSid,
     source: forwardTarget.source,
-    forwardNumber: forwardTarget.number
+    forwardNumber: forwardTarget.number,
+    routingMode: forwardTarget.routingMode
   });
 
-  return createXmlResponse(buildForwardDialTwiml(buildActionUrl(request.url), forwardTarget.number));
+  return createXmlResponse(
+    buildForwardDialTwiml({
+      actionUrl: buildActionUrl(request.url),
+      forwardNumber: forwardTarget.number,
+      enableFullCallCapture: forwardTarget.routingMode === "full_call_capture",
+      recordingStatusCallbackUrl:
+        forwardTarget.routingMode === "full_call_capture"
+          ? buildRecordingStatusUrl(request.url)
+          : null
+    })
+  );
 }

@@ -6,6 +6,7 @@ import {
   updateMissedCallRecoverySettings,
   validateMissedCallRecoverySettings
 } from "@/lib/missed-call-recovery-settings";
+import type { ServiceCallRoutingMode } from "@/lib/service-call-routing-mode";
 import type { BusinessVertical, SolutionMode } from "@/lib/solution-mode";
 
 export async function GET() {
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
           businessName: string;
           solutionMode: SolutionMode;
           businessVertical: BusinessVertical;
+          callRoutingMode: ServiceCallRoutingMode;
           callbackNumber: string;
           defaultCallbackWindow: string;
           businessHours: string;
