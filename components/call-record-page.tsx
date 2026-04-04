@@ -9,6 +9,12 @@ import type { DashboardCallRow } from "@/lib/dashboard-calls";
 import type { CallRecordDetail, TranscriptEntry } from "@/lib/call-detail";
 import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
 import { defaultSolutionMode, type SolutionMode } from "@/lib/solution-mode";
+import {
+  formatServiceAnsweredCallOutcomeLabel,
+  normalizeServiceAnsweredCallOutcome,
+  serviceAnsweredCallOutcomeOptions,
+  type ServiceAnsweredCallOutcome
+} from "@/lib/service-answered-call-outcomes";
 import { createClient } from "@/lib/supabase/client";
 import {
   assignMissedCallWorkflowOwner,
@@ -226,6 +232,9 @@ export function CallRecordPage({
   const analysisSummary = detailState.analysisSummary ?? defaultAnalysisSummary;
   const operationalOutcome = row.callOutcome ?? analysisSummary.callOutcome;
   const isMissedCallRecovery = isMissedCallRecoveryRecord(row);
+  const isServiceAnsweredCall =
+    resolvedSolutionMode === "service_business_missed_call_recovery" && !isMissedCallRecovery;
+  const manualAnsweredCallOutcome = normalizeServiceAnsweredCallOutcome(row.callOutcome);
   const historyEntries = isMissedCallRecovery ? buildMissedCallHistory(row) : [];
   const recoveryOutcome = isMissedCallRecovery ? getMissedCallRecoveryOutcome(row) : null;
   const recoveredValue = isMissedCallRecovery ? getMissedCallRecoveredValue(row) : 0;
@@ -444,6 +453,22 @@ export function CallRecordPage({
     setNotice("Operational note recorded.");
   }
 
+  function handleSetAnsweredCallOutcome(outcome: ServiceAnsweredCallOutcome) {
+    if (!isServiceAnsweredCall) {
+      return;
+    }
+
+    setRow((currentRow) => ({
+      ...currentRow,
+      callOutcome: outcome,
+      notes: currentRow.notes.includes(`Outcome recorded: ${formatServiceAnsweredCallOutcomeLabel(outcome)}`)
+        ? currentRow.notes
+        : [`Outcome recorded: ${formatServiceAnsweredCallOutcomeLabel(outcome)}`, ...currentRow.notes]
+    }));
+    setNoticeTone("success");
+    setNotice(`Outcome updated to ${formatServiceAnsweredCallOutcomeLabel(outcome)}.`);
+  }
+
   function handleToggleOwnership() {
     if (!isMissedCallRecovery || !currentOwnerLabel) {
       return;
@@ -628,6 +653,13 @@ export function CallRecordPage({
                     value={primaryStatusValue}
                     detail={isMissedCallRecovery ? operationalOutcome : row.status}
                   />
+                  {isServiceAnsweredCall ? (
+                    <SummaryField
+                      label="Manual Outcome"
+                      value={formatServiceAnsweredCallOutcomeLabel(row.callOutcome)}
+                      detail="Set by staff for this answered call."
+                    />
+                  ) : null}
                   {isMissedCallRecovery ? (
                     <SummaryField
                       label="Recovery Outcome"
@@ -978,9 +1010,38 @@ export function CallRecordPage({
 
           <CardSection
             title="Action Controls"
-            description="Update the case status and keep the recovery workflow moving."
+            description={
+              isServiceAnsweredCall
+                ? "Update the answered-call outcome, add notes, and keep the transcript record operationally useful."
+                : "Update the case status and keep the recovery workflow moving."
+            }
           >
             <div className="space-y-3">
+              {isServiceAnsweredCall ? (
+                <div className="surface-secondary px-4 py-4">
+                  <div className="type-label-text text-[11px]">Manual Outcome</div>
+                  <div className="mt-3 flex flex-wrap gap-2.5">
+                    {serviceAnsweredCallOutcomeOptions.map((option) => {
+                      const isActive = manualAnsweredCallOutcome === option.value;
+
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => handleSetAnsweredCallOutcome(option.value)}
+                          className={`inline-flex min-h-[38px] items-center justify-center rounded-[12px] border px-3.5 py-2 text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] ${
+                            isActive
+                              ? "border-[#2563EB] bg-[#EEF4FF] text-[#1D4ED8]"
+                              : "border-[#E5E7EB] bg-[#FFFFFF] text-[#374151] hover:border-[#D1D5DB] hover:bg-[#F9FAFB]"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
               <button
                 type="button"
                 onClick={handleSendFollowUp}

@@ -42,11 +42,13 @@ export type SupabaseCallRecord = {
 
 export type DashboardCallRow = CallTableRow & {
   startedAtRaw: string;
+  endedAtRaw?: string | null;
   updatedAtRaw: string | null;
   externalId: string | null;
   direction: string;
   recordingFilename: string | null;
   sourceSystem: string | null;
+  transcriptAvailable?: boolean;
   workflowStatusLabel?: "Action Required" | "Follow-Up Sent" | "Escalated" | "Resolved";
   recoveryOutcomeLabel?: "Pending" | "Recovered" | "Not Recovered";
   recoveredValue?: number | null;
@@ -68,6 +70,10 @@ export type SupabaseAnalysisRecord = {
   recommended_action: string | null;
   summary: string | null;
   analyst_note: string | null;
+};
+
+export type SupabaseTranscriptStatusRecord = {
+  call_id: string;
 };
 
 function formatDisplayLabel(value: string | null | undefined, fallback: string) {
@@ -603,7 +609,10 @@ function getPeriodByRange(startedAt: string): Record<DateRangeKey, string> {
 
 export function mapSupabaseCallToDashboardRow(
   record: SupabaseCallRecord,
-  analysis: SupabaseAnalysisRecord | null = null
+  analysis: SupabaseAnalysisRecord | null = null,
+  options?: {
+    transcriptAvailable?: boolean;
+  }
 ): DashboardCallRow {
   const status = getStatusLabel(record.status);
   const category = getCategory(record, status, analysis);
@@ -724,10 +733,12 @@ export function mapSupabaseCallToDashboardRow(
           : "Forwarded Twilio call was not answered."
       : conciseAnalystNote,
     startedAtRaw: record.started_at,
+    endedAtRaw: record.ended_at,
     updatedAtRaw: record.updated_at,
     direction: record.direction,
     recordingFilename: record.recording_filename,
     sourceSystem: record.source_system,
+    transcriptAvailable: options?.transcriptAvailable ?? false,
     workflowStatusLabel: isMissedCallRecoveryCase ? recoveryWorkflowStatusLabel : undefined,
     recoveryOutcomeLabel: isMissedCallRecoveryCase ? "Pending" : undefined,
     recoveredValue: isMissedCallRecoveryCase ? 0 : undefined,

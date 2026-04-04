@@ -13,12 +13,17 @@ import {
   buildTrendData,
   buildMissedCallRecoveryRows,
   getLastUpdatedLabel,
+  isMissedCallRecoveryCandidate,
   isWithinDateRange,
   type DashboardCallRow
 } from "@/lib/dashboard-calls";
 import { demoMissedCallRecoveryRows, demoTrendByRange } from "@/lib/demo-dashboard-data";
 import { useCurrentBusinessAccount } from "@/components/solution-mode-provider";
-import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
+import {
+  formatServiceAnsweredCallOutcomeLabel,
+  serviceAnsweredCallOutcomeOptions,
+  type ServiceAnsweredCallOutcome
+} from "@/lib/service-answered-call-outcomes";
 import type { BusinessVertical } from "@/lib/solution-mode";
 
 type PrimaryMetricItem = {
@@ -52,6 +57,88 @@ function formatCurrency(value: number) {
     currency: "GBP",
     maximumFractionDigits: 0
   }).format(value);
+}
+
+function formatCallDuration(startedAtRaw: string, endedAtRaw?: string | null) {
+  if (!endedAtRaw) {
+    return "Not available";
+  }
+
+  const durationSeconds = Math.max(
+    0,
+    Math.round((new Date(endedAtRaw).getTime() - new Date(startedAtRaw).getTime()) / 1000)
+  );
+
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = durationSeconds % 60;
+
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function hasAnsweredDuration(row: DashboardCallRow) {
+  if (!row.endedAtRaw) {
+    return false;
+  }
+
+  return new Date(row.endedAtRaw).getTime() > new Date(row.startedAtRaw).getTime();
+}
+
+function isOperationalAnsweredCall(row: DashboardCallRow) {
+  if (row.direction !== "inbound" || isMissedCallRecoveryCandidate(row)) {
+    return false;
+  }
+
+  if (!row.endedAtRaw) {
+    return true;
+  }
+
+  return hasAnsweredDuration(row);
+}
+
+function sortRowsByStartedAtDesc(rows: DashboardCallRow[]) {
+  return [...rows].sort(
+    (left, right) => new Date(right.startedAtRaw).getTime() - new Date(left.startedAtRaw).getTime()
+  );
+}
+
+function getOperationalStatusClasses(status: string) {
+  const normalizedStatus = status.toLowerCase();
+
+  if (normalizedStatus === "resolved") {
+    return "border border-[#D1E9D7] bg-[#F4FBF5] text-[#256B44]";
+  }
+
+  if (normalizedStatus === "follow-up sent" || normalizedStatus === "under review") {
+    return "border border-[#DCE7F8] bg-[#F7FAFF] text-[#355A93]";
+  }
+
+  if (normalizedStatus === "escalated") {
+    return "border border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]";
+  }
+
+  return "border border-[#F2D8D8] bg-[#FFF6F6] text-[#A04C4C]";
+}
+
+function getAnsweredCallOutcomeClasses(outcome: string | null | undefined) {
+  const normalizedOutcome = formatServiceAnsweredCallOutcomeLabel(outcome, "");
+
+  if (!normalizedOutcome) {
+    return "border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280]";
+  }
+
+  if (normalizedOutcome === "Booked") {
+    return "border border-[#D1E9D7] bg-[#F4FBF5] text-[#256B44]";
+  }
+
+  if (normalizedOutcome === "Quote Requested" || normalizedOutcome === "Callback Needed") {
+    return "border border-[#DCE7F8] bg-[#F7FAFF] text-[#355A93]";
+  }
+
+  if (normalizedOutcome === "No Job") {
+    return "border border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]";
+  }
+
+  return "border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280]";
 }
 
 function getBusinessVerticalLabel(businessVertical: BusinessVertical) {
@@ -454,6 +541,196 @@ function CallsOverviewTable({
   );
 }
 
+function ServiceMissedCallsSection({
+  rows,
+  emptyMessage,
+  onCallBack,
+  onOpenRecord,
+  onMarkResolved
+}: {
+  rows: DashboardCallRow[];
+  emptyMessage: string;
+  onCallBack: (row: DashboardCallRow) => void;
+  onOpenRecord: (row: DashboardCallRow) => void;
+  onMarkResolved: (row: DashboardCallRow) => void;
+}) {
+  return (
+    <section className="surface-primary motion-fade-up overflow-hidden">
+      <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6 sm:py-5.5">
+        <h2 className="type-section-title text-[20px] sm:text-[22px]">Missed Calls</h2>
+        <p className="type-body-text mt-2 text-[14px] leading-6">
+          Inbound calls that still need a callback, review, or resolution inside the missed-call recovery flow.
+        </p>
+      </div>
+
+      <div className="divide-y divide-[#E5E7EB]">
+        {rows.length > 0 ? (
+          rows.map((row) => {
+            const statusLabel = row.workflowStatusLabel ?? row.status;
+
+            return (
+              <div key={row.id} className="px-5 py-5 sm:px-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h3 className="type-section-title text-[17px]">{row.caller}</h3>
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getOperationalStatusClasses(
+                          statusLabel
+                        )}`}
+                      >
+                        {statusLabel}
+                      </span>
+                    </div>
+                    <div className="type-muted-text mt-1.5 text-[13px]">{row.phone}</div>
+                    <div className="type-body-text mt-2 text-[14px] leading-6">{row.date}</div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => onCallBack(row)}
+                      className="button-primary-accent inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                    >
+                      Call Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenRecord(row)}
+                      className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                    >
+                      Open Record
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onMarkResolved(row)}
+                      className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                    >
+                      Mark Resolved
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="px-5 py-10 text-center sm:px-6">
+            <div className="type-body-text text-[15px]">{emptyMessage}</div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ServiceAnsweredCallsSection({
+  rows,
+  emptyMessage,
+  activeOutcomeRowId,
+  onViewTranscript,
+  onAddNote,
+  onMarkOutcome,
+  onSelectOutcome
+}: {
+  rows: DashboardCallRow[];
+  emptyMessage: string;
+  activeOutcomeRowId: string | null;
+  onViewTranscript: (row: DashboardCallRow) => void;
+  onAddNote: (row: DashboardCallRow) => void;
+  onMarkOutcome: (row: DashboardCallRow) => void;
+  onSelectOutcome: (row: DashboardCallRow, outcome: ServiceAnsweredCallOutcome) => void;
+}) {
+  return (
+    <section className="surface-primary motion-fade-up overflow-hidden">
+      <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6 sm:py-5.5">
+        <h2 className="type-section-title text-[20px] sm:text-[22px]">Answered Calls</h2>
+        <p className="type-body-text mt-2 text-[14px] leading-6">
+          Operational call log for answered inbound conversations, including transcript availability and quick follow-up actions.
+        </p>
+      </div>
+
+      <div className="divide-y divide-[#E5E7EB]">
+        {rows.length > 0 ? (
+          rows.map((row) => (
+            <div key={row.id} className="px-5 py-5 sm:px-6">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h3 className="type-section-title text-[17px]">{row.caller}</h3>
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${
+                        row.transcriptAvailable
+                          ? "border border-[#D1E9D7] bg-[#F4FBF5] text-[#256B44]"
+                          : "border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280]"
+                      }`}
+                    >
+                      {row.transcriptAvailable ? "Transcript Available" : "Transcript Not Available"}
+                    </span>
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getAnsweredCallOutcomeClasses(
+                        row.callOutcome
+                      )}`}
+                    >
+                      {formatServiceAnsweredCallOutcomeLabel(row.callOutcome)}
+                    </span>
+                  </div>
+                  <div className="type-body-text mt-2 text-[14px] leading-6">{row.date}</div>
+                  <div className="type-muted-text mt-1.5 text-[13px]">
+                    Duration: {formatCallDuration(row.startedAtRaw, row.endedAtRaw)}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => onViewTranscript(row)}
+                    className="button-primary-accent inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                  >
+                    View Transcript
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onAddNote(row)}
+                    className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                  >
+                    Add Note
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMarkOutcome(row)}
+                    className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                  >
+                    Mark Outcome
+                  </button>
+                </div>
+
+                {activeOutcomeRowId === row.id ? (
+                  <div className="mt-4 flex flex-wrap gap-2.5">
+                    {serviceAnsweredCallOutcomeOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => onSelectOutcome(row, option.value)}
+                        className="button-secondary-ui inline-flex min-h-[38px] items-center justify-center px-3.5 py-2 text-[13px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="px-5 py-10 text-center sm:px-6">
+            <div className="type-body-text text-[15px]">{emptyMessage}</div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [selectedRange, setSelectedRange] = useState<DateRangeKey>("30d");
@@ -463,11 +740,11 @@ export default function HomePage() {
   const [dataState, setDataState] = useState<"loading" | "ready" | "error">("loading");
   const [dataError, setDataError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [activeAnsweredOutcomeRowId, setActiveAnsweredOutcomeRowId] = useState<string | null>(null);
   const currentBusinessAccount = useCurrentBusinessAccount();
   const solutionMode = currentBusinessAccount.solutionMode;
 
   const isServiceBusinessMode = solutionMode === "service_business_missed_call_recovery";
-  const copy = getSolutionModeCopy(solutionMode);
   const businessDescriptor = `${currentBusinessAccount.businessName} · ${getBusinessVerticalLabel(
     currentBusinessAccount.businessVertical
   )}`;
@@ -503,37 +780,11 @@ export default function HomePage() {
     [dashboardMode, rowsInSelectedRange, selectedRange]
   );
 
-  const totalRevenue = useMemo(
-    () => rowsInSelectedRange.reduce((sum, row) => sum + row.revenueValue, 0),
-    [rowsInSelectedRange]
-  );
-
   const missedRevenue = useMemo(
     () =>
       rowsInSelectedRange
         .filter((row) => getRowActionStatus(row) === "Needs Action")
         .reduce((sum, row) => sum + row.revenueValue, 0),
-    [rowsInSelectedRange]
-  );
-
-  const recoveredRevenue = useMemo(
-    () =>
-      rowsInSelectedRange
-        .filter((row) => getRowActionStatus(row) === "No Action Needed")
-        .reduce((sum, row) => sum + row.revenueValue, 0),
-    [rowsInSelectedRange]
-  );
-
-  const recoveryRate = useMemo(() => {
-    if (totalRevenue === 0) return 0;
-    return Math.round((recoveredRevenue / totalRevenue) * 100);
-  }, [recoveredRevenue, totalRevenue]);
-
-  const highIntentMissedCalls = useMemo(
-    () =>
-      rowsInSelectedRange.filter(
-        (row) => row.category === "missed-booking" && getRowActionStatus(row) === "Needs Action"
-      ).length,
     [rowsInSelectedRange]
   );
 
@@ -588,17 +839,14 @@ export default function HomePage() {
     [focusedRows]
   );
 
-  const servicePriorityRows = useMemo(
-    () =>
-      sortPriorityRows(
-        recoveryRowsInSelectedRange.filter((row) => getRowActionStatus(row) === "Needs Action")
-      ).slice(0, 4),
+  const serviceMissedCallRows = useMemo(
+    () => sortRowsByStartedAtDesc(recoveryRowsInSelectedRange),
     [recoveryRowsInSelectedRange]
   );
 
-  const serviceRecoveryRows = useMemo(
-    () => sortPriorityRows(recoveryRowsInSelectedRange),
-    [recoveryRowsInSelectedRange]
+  const serviceAnsweredCallRows = useMemo(
+    () => sortRowsByStartedAtDesc(rowsInSelectedRange.filter(isOperationalAnsweredCall)),
+    [rowsInSelectedRange]
   );
 
   const serviceMissedCallsToday = useMemo(
@@ -619,17 +867,9 @@ export default function HomePage() {
     [recoveryRowsInSelectedRange]
   );
 
-  const serviceUnresolvedCases = useMemo(
-    () => recoveryRowsInSelectedRange.filter((row) => row.workflowStatusLabel !== "Resolved").length,
-    [recoveryRowsInSelectedRange]
-  );
-
-  const serviceRevenueAtRisk = useMemo(
-    () =>
-      recoveryRowsInSelectedRange
-        .filter((row) => row.workflowStatusLabel !== "Resolved")
-        .reduce((sum, row) => sum + row.revenueValue, 0),
-    [recoveryRowsInSelectedRange]
+  const serviceAnsweredCallsToday = useMemo(
+    () => serviceAnsweredCallRows.filter((row) => isStartedToday(row.startedAtRaw)).length,
+    [serviceAnsweredCallRows]
   );
 
   const primaryMetrics = useMemo<PrimaryMetricItem[]>(() => {
@@ -642,7 +882,7 @@ export default function HomePage() {
             detail: "Loading today’s inbound calls that require recovery action"
           },
           {
-            label: copy.dashboard.serviceFollowUpLabel,
+            label: "Open Follow-Ups",
             value: "—",
             detail: "Loading cases that still need a manual callback or escalation"
           },
@@ -652,14 +892,9 @@ export default function HomePage() {
             detail: "Loading automatic and manual missed-call follow-up activity"
           },
           {
-            label: copy.dashboard.serviceJobsAtRiskLabel,
+            label: "Answered Calls Today",
             value: "—",
-            detail: "Loading open recovery work across the active operating window"
-          },
-          {
-            label: "Estimated Revenue At Risk",
-            value: "—",
-            detail: "Loading the value still exposed across unresolved missed-call cases"
+            detail: "Loading answered inbound calls available for transcript review and note capture"
           }
         ];
       }
@@ -671,7 +906,7 @@ export default function HomePage() {
           detail: "Inbound calls from today that entered the missed-call recovery workflow"
         },
         {
-          label: copy.dashboard.serviceFollowUpLabel,
+          label: "Open Follow-Ups",
           value: String(serviceAwaitingFollowUp),
           detail: "Open cases that still require a callback, escalation, or same-day action"
         },
@@ -681,14 +916,9 @@ export default function HomePage() {
           detail: "Recovery cases where follow-up has already been initiated by SMS"
         },
         {
-          label: copy.dashboard.serviceJobsAtRiskLabel,
-          value: String(serviceUnresolvedCases),
-          detail: "Active missed-call recovery work still open inside the selected operating window"
-        },
-        {
-          label: "Estimated Revenue At Risk",
-          value: formatCurrency(serviceRevenueAtRisk),
-          detail: "Commercial value still exposed across unresolved service-business missed calls"
+          label: "Answered Calls Today",
+          value: String(serviceAnsweredCallsToday),
+          detail: "Answered inbound calls captured today and available for transcript review or follow-up notes"
         }
       ];
     }
@@ -759,10 +989,9 @@ export default function HomePage() {
     managerReviewCases,
     missedRevenue,
     serviceAwaitingFollowUp,
+    serviceAnsweredCallsToday,
     serviceMissedCallsToday,
-    serviceRevenueAtRisk,
-    serviceSmsSent,
-    serviceUnresolvedCases
+    serviceSmsSent
   ]);
 
   const summaryItems = useMemo(() => {
@@ -770,8 +999,9 @@ export default function HomePage() {
       if (dataState === "loading") {
         return [
           `Recovery Window: ${getDateRangeLabel(selectedRange)}`,
-          "Open Cases: Loading...",
+          "Open Follow-Ups: Loading...",
           "SMS Sent: Loading...",
+          "Answered Calls Today: Loading...",
           "Last Updated: Syncing..."
         ];
       }
@@ -779,16 +1009,18 @@ export default function HomePage() {
       if (dataState === "error") {
         return [
           `Recovery Window: ${getDateRangeLabel(selectedRange)}`,
-          "Open Cases: Unavailable",
+          "Open Follow-Ups: Unavailable",
           "SMS Sent: Unavailable",
+          "Answered Calls Today: Unavailable",
           "Last Updated: Connection failed"
         ];
       }
 
       return [
         `Recovery Window: ${getDateRangeLabel(selectedRange)}`,
-        `Open Cases: ${serviceUnresolvedCases}`,
+        `Open Follow-Ups: ${serviceAwaitingFollowUp}`,
         `SMS Sent: ${serviceSmsSent}`,
+        `Answered Calls Today: ${serviceAnsweredCallsToday}`,
         `Last Updated: ${getLastUpdatedLabel(
           recoveryRowsInSelectedRange.length > 0 ? recoveryRowsInSelectedRange : rowsState
         )}`
@@ -819,7 +1051,7 @@ export default function HomePage() {
       `Follow-Up Delays: ${followUpDelays}`,
       activeTrendBucket
         ? `Focused Period: ${activeTrendBucket}`
-        : `Missed Calls In Queue: ${serviceUnresolvedCases}`
+        : `Missed Calls In Queue: ${recoveryRowsInSelectedRange.length}`
     ];
   }, [
     activeTrendBucket,
@@ -830,8 +1062,9 @@ export default function HomePage() {
     recoveryRowsInSelectedRange,
     rowsState,
     selectedRange,
-    serviceSmsSent,
-    serviceUnresolvedCases
+    serviceAnsweredCallsToday,
+    serviceAwaitingFollowUp,
+    serviceSmsSent
   ]);
 
   const callListEmptyMessage = useMemo(() => {
@@ -869,6 +1102,22 @@ export default function HomePage() {
 
     return "No recovery cases match the current operating view.";
   }, [dataError, dataState, recoveryRowsInSelectedRange.length]);
+
+  const answeredCallEmptyMessage = useMemo(() => {
+    if (dataState === "loading") {
+      return "Loading answered inbound calls from the dashboard data service...";
+    }
+
+    if (dataState === "error") {
+      return dataError ?? "Unable to load answered calls right now.";
+    }
+
+    if (serviceAnsweredCallRows.length === 0) {
+      return "No answered inbound calls are available in the selected operating window yet.";
+    }
+
+    return "No answered calls match the current operating view.";
+  }, [dataError, dataState, serviceAnsweredCallRows.length]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -997,6 +1246,52 @@ export default function HomePage() {
     };
   }
 
+  function handleCallBack(row: DashboardCallRow) {
+    const dialNumber = row.phone.replace(/[^\d+]/g, "");
+
+    if (!dialNumber || dialNumber.toLowerCase().includes("placeholder")) {
+      handleRowOpen(row);
+      setNotice(`Opened ${row.caller}'s record because no callback number is available.`);
+      return;
+    }
+
+    window.location.href = `tel:${dialNumber}`;
+    setNotice(`Opening callback for ${row.caller}.`);
+  }
+
+  function handleAddAnsweredCallNote(row: DashboardCallRow) {
+    const note = window.prompt(`Enter a note for ${row.caller}`);
+
+    if (!note?.trim()) {
+      return;
+    }
+
+    updateRow(row.id, (currentRow) => ({
+      ...currentRow,
+      notes: currentRow.notes.includes(note.trim()) ? currentRow.notes : [note.trim(), ...currentRow.notes]
+    }));
+    setNotice(`Note saved for ${row.caller}.`);
+  }
+
+  function handleMarkAnsweredCallOutcome(row: DashboardCallRow) {
+    setActiveAnsweredOutcomeRowId((currentRowId) => (currentRowId === row.id ? null : row.id));
+  }
+
+  function handleSelectAnsweredCallOutcome(
+    row: DashboardCallRow,
+    outcome: ServiceAnsweredCallOutcome
+  ) {
+    updateRow(row.id, (currentRow) => ({
+      ...currentRow,
+      callOutcome: outcome,
+      notes: currentRow.notes.includes(`Outcome recorded: ${formatServiceAnsweredCallOutcomeLabel(outcome)}`)
+        ? currentRow.notes
+        : [`Outcome recorded: ${formatServiceAnsweredCallOutcomeLabel(outcome)}`, ...currentRow.notes]
+    }));
+    setActiveAnsweredOutcomeRowId(null);
+    setNotice(`Outcome recorded for ${row.caller}.`);
+  }
+
   function handleRowOpen(row: DashboardCallRow) {
     router.push(`/call/${row.id}`);
   }
@@ -1065,7 +1360,7 @@ export default function HomePage() {
           }
           description={
             isServiceBusinessMode
-              ? `Operational view for ${businessDescriptor}, covering missed inbound calls, follow-up activity, jobs at risk, and unresolved recovery cases that still need action.`
+              ? `Operational view for ${businessDescriptor}, covering missed inbound calls, open follow-ups, SMS activity, and answered-call transcripts without the analysis-heavy performance layer.`
               : `Performance view for ${businessDescriptor}, covering conversion failures, revenue exposure, follow-up delays, and the calls that need coaching or recovery attention first.`
           }
           selectedRange={selectedRange}
@@ -1083,31 +1378,27 @@ export default function HomePage() {
 
           {isServiceBusinessMode ? (
             <>
-              <PriorityCallbacksPanel
-                rows={servicePriorityRows}
-                selectedRange={selectedRange}
-                eyebrow="Service recovery queue"
-                title="Priority Callbacks"
-                description={`Missed inbound calls that still require follow-up action in ${getDateRangeLabel(
-                  selectedRange
-                ).toLowerCase()}.`}
-                emptyMessage="No missed inbound calls are currently waiting for callback action in this operating window."
+              <PrimaryMetrics
+                items={primaryMetrics}
+                description="Straightforward operating view for missed calls, follow-up progress, SMS activity, and answered-call handling."
+              />
+
+              <ServiceMissedCallsSection
+                rows={serviceMissedCallRows}
+                emptyMessage={recoveryListEmptyMessage}
+                onCallBack={handleCallBack}
                 onOpenRecord={handleRowOpen}
-                onAssignFollowUp={handleAssignFollowUp}
                 onMarkResolved={handleMarkResolved}
               />
 
-              <PrimaryMetrics
-                items={primaryMetrics}
-                description="Missed-call volume, follow-up progress, and unresolved recovery work for the active operating window."
-              />
-
-              <CallsOverviewTable
-                title="Recovery cases"
-                description="Operational queue of missed inbound calls, follow-up activity, and unresolved recovery work for the selected window."
-                rows={serviceRecoveryRows}
-                emptyMessage={recoveryListEmptyMessage}
-                onOpenRecord={handleRowOpen}
+              <ServiceAnsweredCallsSection
+                rows={serviceAnsweredCallRows}
+                emptyMessage={answeredCallEmptyMessage}
+                activeOutcomeRowId={activeAnsweredOutcomeRowId}
+                onViewTranscript={handleRowOpen}
+                onAddNote={handleAddAnsweredCallNote}
+                onMarkOutcome={handleMarkAnsweredCallOutcome}
+                onSelectOutcome={handleSelectAnsweredCallOutcome}
               />
             </>
           ) : (

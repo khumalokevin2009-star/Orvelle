@@ -4,7 +4,8 @@ import {
   callsSelectFields,
   mapSupabaseCallToDashboardRow,
   type SupabaseAnalysisRecord,
-  type SupabaseCallRecord
+  type SupabaseCallRecord,
+  type SupabaseTranscriptStatusRecord
 } from "@/lib/dashboard-calls";
 import { getCurrentBusinessAccount } from "@/lib/business-account";
 import { demoDashboardRows, shouldUseDemoDashboardData } from "@/lib/demo-dashboard-data";
@@ -61,12 +62,20 @@ export async function GET() {
 
   const callIds = (calls ?? []).map((call) => (call as SupabaseCallRecord).id);
   let analyses: SupabaseAnalysisRecord[] = [];
+  let transcriptRows: SupabaseTranscriptStatusRecord[] = [];
 
   if (callIds.length > 0) {
-    const { data: analysisData, error: analysesError } = await supabase
-      .from("analysis")
-      .select(analysisSelectFields)
-      .in("call_id", callIds);
+    const [{ data: analysisData, error: analysesError }, { data: transcriptData, error: transcriptsError }] =
+      await Promise.all([
+        supabase
+          .from("analysis")
+          .select(analysisSelectFields)
+          .in("call_id", callIds),
+        supabase
+          .from("transcripts")
+          .select("call_id")
+          .in("call_id", callIds)
+      ]);
 
     if (analysesError) {
       console.error("[dashboard-calls] Supabase analysis query failed.", analysesError);
@@ -81,6 +90,20 @@ export async function GET() {
     }
 
     analyses = (analysisData as SupabaseAnalysisRecord[] | null) ?? [];
+
+    if (transcriptsError) {
+      console.error("[dashboard-calls] Supabase transcript query failed.", transcriptsError);
+
+      return NextResponse.json(
+        {
+          message: transcriptsError.message || "Unable to load transcript availability records from Supabase.",
+          rows: []
+        },
+        { status: 500 }
+      );
+    }
+
+    transcriptRows = (transcriptData as SupabaseTranscriptStatusRecord[] | null) ?? [];
   }
 
   const analysisByCallId = new Map(
@@ -89,11 +112,13 @@ export async function GET() {
       return [record.call_id, record] as const;
     })
   );
+  const transcriptCallIds = new Set(transcriptRows.map((record) => record.call_id));
 
   console.info("[dashboard-calls] Query completed.", {
     businessId: businessAccount.businessId,
     callsReturned: calls?.length ?? 0,
-    analysesReturned: analyses.length
+    analysesReturned: analyses.length,
+    transcriptsReturned: transcriptRows.length
   });
 
   if ((calls?.length ?? 0) === 0) {
@@ -103,7 +128,10 @@ export async function GET() {
   const mappedRows = (calls ?? []).map((call) =>
     mapSupabaseCallToDashboardRow(
       call as SupabaseCallRecord,
-      analysisByCallId.get((call as SupabaseCallRecord).id) ?? null
+      analysisByCallId.get((call as SupabaseCallRecord).id) ?? null,
+      {
+        transcriptAvailable: transcriptCallIds.has((call as SupabaseCallRecord).id)
+      }
     )
   );
 
