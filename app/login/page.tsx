@@ -29,12 +29,37 @@ function getLoginErrorMessage(error: unknown) {
   return "Unable to sign in right now. Please try again.";
 }
 
+function getResetPasswordErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  const normalized = message.toLowerCase();
+
+  if (!message) {
+    return "Unable to send a reset email right now. Please try again.";
+  }
+
+  if (
+    normalized.includes("missing required supabase environment variable") ||
+    normalized.includes("next_public_supabase_url") ||
+    normalized.includes("next_public_supabase_publishable_key")
+  ) {
+    return "Password reset is temporarily unavailable. Please try again later.";
+  }
+
+  if (normalized.includes("email rate limit exceeded")) {
+    return "A reset email was sent recently. Please wait a minute and try again.";
+  }
+
+  return `Unable to send reset email: ${message}`;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isPending, setIsPending] = useState(false);
+  const [isResetPending, setIsResetPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,6 +89,41 @@ export default function LoginPage() {
       setErrorMessage(getLoginErrorMessage(error));
     } finally {
       setIsPending(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (isResetPending || isPending) {
+      return;
+    }
+
+    if (!email.trim()) {
+      setErrorMessage("Enter your email address first so we know where to send the reset link.");
+      setResetNotice(null);
+      return;
+    }
+
+    setIsResetPending(true);
+    setErrorMessage(null);
+    setResetNotice(null);
+
+    try {
+      const supabase = createClient();
+      const redirectTo = new URL("/auth/reset-password", window.location.origin).toString();
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo
+      });
+
+      if (error) {
+        setErrorMessage(getResetPasswordErrorMessage(error));
+        return;
+      }
+
+      setResetNotice("Check your email for a password reset link.");
+    } catch (error) {
+      setErrorMessage(getResetPasswordErrorMessage(error));
+    } finally {
+      setIsResetPending(false);
     }
   }
 
@@ -114,12 +174,13 @@ export default function LoginPage() {
               <label className="block">
                 <div className="flex items-center justify-between gap-4">
                   <span className="type-label-text text-[13px]">Password</span>
-                  <a
-                    href="mailto:access@revenueops.io?subject=Password%20Reset%20Request"
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
                     className="text-[13px] font-medium text-[#6B7280] transition hover:text-[#111827] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
                   >
-                    Forgot password
-                  </a>
+                    {isResetPending ? "Sending reset..." : "Forgot password"}
+                  </button>
                 </div>
                 <input
                   type="password"
@@ -139,6 +200,15 @@ export default function LoginPage() {
                   className="rounded-[12px] border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-[14px] text-[#B91C1C]"
                 >
                   {errorMessage}
+                </div>
+              ) : null}
+
+              {resetNotice ? (
+                <div
+                  aria-live="polite"
+                  className="rounded-[12px] border border-[#D1FAE5] bg-[#ECFDF5] px-4 py-3 text-[14px] text-[#047857]"
+                >
+                  {resetNotice}
                 </div>
               ) : null}
 
