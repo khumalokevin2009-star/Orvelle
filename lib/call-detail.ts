@@ -1,4 +1,5 @@
 import type { DashboardCallRow, SupabaseCallRecord } from "@/lib/dashboard-calls";
+import { parseStoredCallNotes } from "@/lib/call-notes";
 
 export type TranscriptEntry = {
   speaker: "Caller" | "Agent" | "System";
@@ -299,8 +300,10 @@ function buildRevenueContext(analysis: AnalysisRecord | null) {
 }
 
 function buildNotes(row: DashboardCallRow, record: SupabaseCallRecord, analysis: AnalysisRecord | null) {
+  const parsedNotes = parseStoredCallNotes(analysis?.analyst_note);
   const noteEntries = [
-    analysis?.analyst_note ?? null,
+    parsedNotes.analystSummary,
+    ...parsedNotes.staffNotes,
     `Assigned Owner: ${formatDisplayLabel(record.assigned_owner, "Unassigned")}`,
     `Source System: ${formatDisplayLabel(record.source_system, "Manual Upload")}`,
     `Direction: ${formatDisplayLabel(record.direction, "Inbound")}`,

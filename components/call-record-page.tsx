@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { useSolutionMode } from "@/components/solution-mode-provider";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
+import { getServiceMissedCallStatus, SERVICE_MISSED_CALL_CALLED_BACK_NOTE, SERVICE_MISSED_CALL_RESOLVED_NOTE } from "@/lib/service-missed-call-status";
 import type { DashboardCallRow } from "@/lib/dashboard-calls";
 import type { CallRecordDetail, TranscriptEntry } from "@/lib/call-detail";
 import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
@@ -18,7 +19,6 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import {
   assignMissedCallWorkflowOwner,
-  addMissedCallWorkflowNote,
   buildMissedCallHistory,
   formatMissedCallLastAction,
   getMissedCallBookingCreatedLabel,
@@ -153,6 +153,39 @@ function getOperationalOutcomeTone(statusTone: DashboardCallRow["statusTone"]) {
   return "border-[#F2D8D8] bg-[#FFF6F6] text-[#A04C4C]";
 }
 
+function getServiceMissedCallStatusClasses(status: string) {
+  const normalizedStatus = status.toLowerCase();
+
+  if (normalizedStatus === "resolved") {
+    return "border-[#D1E9D7] bg-[#F4FBF5] text-[#256B44]";
+  }
+
+  if (normalizedStatus === "sms sent") {
+    return "border-[#DCE7F8] bg-[#F7FAFF] text-[#355A93]";
+  }
+
+  if (normalizedStatus === "called back") {
+    return "border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]";
+  }
+
+  return "border-[#F2D8D8] bg-[#FFF6F6] text-[#A04C4C]";
+}
+
+function getServiceNoteSummary(row: DashboardCallRow) {
+  const noteCount = row.noteCount ?? 0;
+  const latestNote = row.latestNotePreview?.trim();
+
+  if (noteCount <= 0) {
+    return "No note added";
+  }
+
+  if (latestNote) {
+    return `${noteCount} note${noteCount === 1 ? "" : "s"} • ${latestNote}`;
+  }
+
+  return `${noteCount} note${noteCount === 1 ? "" : "s"} saved`;
+}
+
 function SummaryField({
   label,
   value,
@@ -219,6 +252,7 @@ export function CallRecordPage({
   const router = useRouter();
   const resolvedSolutionMode = useSolutionMode(solutionMode);
   const copy = getSolutionModeCopy(resolvedSolutionMode);
+  const isServiceBusinessMode = resolvedSolutionMode === "service_business_missed_call_recovery";
   const [row, setRow] = useState(() => mergeMissedCallWorkflowRow(initialRow));
   const [detailState, setDetailState] = useState(() => normalizeDetailState(detail));
   const [notice, setNotice] = useState<string | null>(null);
@@ -233,8 +267,10 @@ export function CallRecordPage({
   const operationalOutcome = row.callOutcome ?? analysisSummary.callOutcome;
   const isMissedCallRecovery = isMissedCallRecoveryRecord(row);
   const isServiceAnsweredCall =
-    resolvedSolutionMode === "service_business_missed_call_recovery" && !isMissedCallRecovery;
+    isServiceBusinessMode && !isMissedCallRecovery;
   const manualAnsweredCallOutcome = normalizeServiceAnsweredCallOutcome(row.callOutcome);
+  const serviceMissedCallStatus =
+    isServiceBusinessMode && isMissedCallRecovery ? getServiceMissedCallStatus(row) : null;
   const historyEntries = isMissedCallRecovery ? buildMissedCallHistory(row) : [];
   const recoveryOutcome = isMissedCallRecovery ? getMissedCallRecoveryOutcome(row) : null;
   const recoveredValue = isMissedCallRecovery ? getMissedCallRecoveredValue(row) : 0;
@@ -246,6 +282,30 @@ export function CallRecordPage({
   const primaryStatusValue = isMissedCallRecovery
     ? (currentWorkflowStatus ?? "Action Required")
     : operationalOutcome;
+  const callRecordTitle = isMissedCallRecovery
+    ? (isServiceBusinessMode ? "Missed Call Record" : copy.callRecord.missedCallTitle)
+    : isServiceBusinessMode
+      ? "Call Record"
+      : "Call Analysis Record";
+  const callRecordDescription = isMissedCallRecovery
+    ? isServiceBusinessMode
+      ? "Review the missed call, add notes, and keep the callback work simple and clear."
+      : copy.callRecord.missedCallDescription
+    : isServiceBusinessMode
+      ? "View the transcript, add notes, and set a simple outcome for this answered call."
+      : "Detailed inspection of a flagged interaction, associated conversion failure indicators, and required revenue recovery actions.";
+  const heroLabel = isServiceBusinessMode
+    ? isMissedCallRecovery
+      ? "Missed inbound call"
+      : "Answered inbound call"
+    : detailState.subtitle;
+  const heroStatusLabel = isServiceBusinessMode
+    ? isMissedCallRecovery
+      ? (serviceMissedCallStatus ?? primaryStatusValue)
+      : "Answered call"
+    : isMissedCallRecovery
+      ? primaryStatusValue
+      : row.status;
   const issueIdentified =
     analysisSummary.primaryIssue !== "Pending classification"
       ? analysisSummary.primaryIssue
@@ -280,14 +340,34 @@ export function CallRecordPage({
     };
   }, []);
 
-  function pushNote(note: string) {
-    setRow((currentRow) => ({
-      ...currentRow,
-      notes: currentRow.notes.includes(note) ? currentRow.notes : [note, ...currentRow.notes]
-    }));
+  async function saveCallNote(note: string) {
+    const response = await fetch(`/api/calls/${row.id}/notes`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ note })
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          message?: string;
+          latestNote?: string | null;
+          noteCount?: number;
+        }
+      | null;
+
+    if (!response.ok) {
+      throw new Error(payload?.message || "Unable to save the note right now.");
+    }
+
+    return {
+      latestNote: payload?.latestNote ?? note,
+      noteCount: payload?.noteCount
+    };
   }
 
-  function handleResolve() {
+  async function handleResolve() {
     if (!isMissedCallRecovery && row.status === "Resolved") {
       setNoticeTone("error");
       setNotice("This interaction record is already marked as resolved.");
@@ -298,6 +378,27 @@ export function CallRecordPage({
       if (recoveryOutcome === "Not Recovered") {
         setNoticeTone("error");
         setNotice("This case is already closed as not recovered.");
+        return;
+      }
+
+      if (isServiceBusinessMode) {
+        try {
+          const savedNote = await saveCallNote(SERVICE_MISSED_CALL_RESOLVED_NOTE);
+
+          setRow((currentRow) => ({
+            ...setMissedCallRecoveryOutcome(currentRow, "Not Recovered"),
+            latestNotePreview: savedNote.latestNote,
+            noteCount: savedNote.noteCount ?? (currentRow.noteCount ?? 0) + 1,
+            notes: currentRow.notes.includes(savedNote.latestNote)
+              ? currentRow.notes
+              : [savedNote.latestNote, ...currentRow.notes]
+          }));
+          setNoticeTone("success");
+          setNotice("Case marked as resolved.");
+        } catch (error) {
+          setNoticeTone("error");
+          setNotice(error instanceof Error ? error.message : "Unable to update the case right now.");
+        }
         return;
       }
 
@@ -437,20 +538,31 @@ export function CallRecordPage({
     setNotice("Case escalated for immediate recovery handling.");
   }
 
-  function handleAddNote() {
+  async function handleAddNote() {
     const note = window.prompt(`Enter an operational note for ${row.caller}`);
 
     if (!note?.trim()) {
       return;
     }
 
-    if (isMissedCallRecovery) {
-      setRow(addMissedCallWorkflowNote(row, note.trim()));
-    } else {
-      pushNote(note.trim());
+    try {
+      const savedNote = await saveCallNote(note.trim());
+
+      setRow((currentRow) => ({
+        ...currentRow,
+        updatedAtRaw: new Date().toISOString(),
+        latestNotePreview: savedNote.latestNote,
+        noteCount: savedNote.noteCount ?? (currentRow.noteCount ?? 0) + 1,
+        notes: currentRow.notes.includes(savedNote.latestNote)
+          ? currentRow.notes
+          : [savedNote.latestNote, ...currentRow.notes]
+      }));
+      setNoticeTone("success");
+      setNotice("Operational note recorded.");
+    } catch (error) {
+      setNoticeTone("error");
+      setNotice(error instanceof Error ? error.message : "Unable to save the note right now.");
     }
-    setNoticeTone("success");
-    setNotice("Operational note recorded.");
   }
 
   function handleSetAnsweredCallOutcome(outcome: ServiceAnsweredCallOutcome) {
@@ -467,6 +579,34 @@ export function CallRecordPage({
     }));
     setNoticeTone("success");
     setNotice(`Outcome updated to ${formatServiceAnsweredCallOutcomeLabel(outcome)}.`);
+  }
+
+  async function handleMarkCalledBack() {
+    if (!isMissedCallRecovery) {
+      return;
+    }
+
+    try {
+      const savedNote = await saveCallNote(SERVICE_MISSED_CALL_CALLED_BACK_NOTE);
+
+      setRow((currentRow) => ({
+        ...currentRow,
+        status: currentRow.status === "Resolved" ? currentRow.status : "Under Review",
+        statusTone: currentRow.status === "Resolved" ? currentRow.statusTone : "pending",
+        actionStatus: currentRow.status === "Resolved" ? "No Action Needed" : "Needs Action",
+        updatedAtRaw: new Date().toISOString(),
+        latestNotePreview: savedNote.latestNote,
+        noteCount: savedNote.noteCount ?? (currentRow.noteCount ?? 0) + 1,
+        notes: currentRow.notes.includes(savedNote.latestNote)
+          ? currentRow.notes
+          : [savedNote.latestNote, ...currentRow.notes]
+      }));
+      setNoticeTone("success");
+      setNotice("Marked as called back.");
+    } catch (error) {
+      setNoticeTone("error");
+      setNotice(error instanceof Error ? error.message : "Unable to update the call right now.");
+    }
   }
 
   function handleToggleOwnership() {
@@ -606,12 +746,8 @@ export function CallRecordPage({
       ) : null}
 
       <WorkspacePageHeader
-        title={isMissedCallRecovery ? copy.callRecord.missedCallTitle : "Call Analysis Record"}
-        description={
-          isMissedCallRecovery
-            ? copy.callRecord.missedCallDescription
-            : "Detailed inspection of a flagged interaction, associated conversion failure indicators, and required revenue recovery actions."
-        }
+        title={callRecordTitle}
+        description={callRecordDescription}
         actions={
           <Link
             href={backHref}
@@ -627,18 +763,22 @@ export function CallRecordPage({
           <section className="surface-primary overflow-hidden p-6">
             <div className="flex flex-wrap items-center gap-3">
               <span className="inline-flex rounded-full border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#374151]">
-                {detailState.subtitle}
+                {heroLabel}
               </span>
               <span
-                className={`inline-flex rounded-full border px-3 py-1 text-[12px] font-semibold ${getOperationalOutcomeTone(
-                  row.statusTone
-                )}`}
+                className={`inline-flex rounded-full border px-3 py-1 text-[12px] font-semibold ${
+                  isServiceBusinessMode
+                    ? isMissedCallRecovery
+                      ? getServiceMissedCallStatusClasses(heroStatusLabel)
+                      : "border-[#DCE7F8] bg-[#F7FAFF] text-[#355A93]"
+                    : getOperationalOutcomeTone(row.statusTone)
+                }`}
               >
-                {isMissedCallRecovery ? primaryStatusValue : row.status}
+                {heroStatusLabel}
               </span>
             </div>
 
-            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_340px]">
+            <div className={`mt-5 grid gap-5 ${isServiceBusinessMode ? "" : "xl:grid-cols-[minmax(0,1.25fr)_340px]"}`}>
               <div>
                 <h2 className="type-page-title text-[32px] leading-[1.02] sm:text-[36px]">{row.caller}</h2>
                 <p className="type-body-text mt-3 max-w-[820px] text-[15px] leading-7">{row.summary}</p>
@@ -649,9 +789,25 @@ export function CallRecordPage({
                   }`}
                 >
                   <SummaryField
-                    label={isMissedCallRecovery ? "Follow-Up Status" : "Outcome"}
-                    value={primaryStatusValue}
-                    detail={isMissedCallRecovery ? operationalOutcome : row.status}
+                    label={
+                      isServiceBusinessMode
+                        ? isMissedCallRecovery
+                          ? "Status"
+                          : "Call Type"
+                        : isMissedCallRecovery
+                          ? "Follow-Up Status"
+                          : "Outcome"
+                    }
+                    value={isServiceBusinessMode ? heroStatusLabel : primaryStatusValue}
+                    detail={
+                      isServiceBusinessMode
+                        ? isMissedCallRecovery
+                          ? "Simple missed-call status for your team."
+                          : "Answered inbound call."
+                        : isMissedCallRecovery
+                          ? operationalOutcome
+                          : row.status
+                    }
                   />
                   {isServiceAnsweredCall ? (
                     <SummaryField
@@ -660,19 +816,21 @@ export function CallRecordPage({
                       detail="Set by staff for this answered call."
                     />
                   ) : null}
-                  {isMissedCallRecovery ? (
+                  {!isServiceBusinessMode && isMissedCallRecovery ? (
                     <SummaryField
                       label="Recovery Outcome"
                       value={recoveryOutcome ?? "Pending"}
                       detail={resolutionReason ?? "Recovery outcome still pending."}
                     />
                   ) : null}
-                  <SummaryField
-                    label={isMissedCallRecovery ? "Revenue Risk" : "Estimated Revenue"}
-                    value={row.revenue}
-                    detail={isMissedCallRecovery ? "Estimated revenue at risk" : "Projected recovery value"}
-                  />
-                  {isMissedCallRecovery ? (
+                  {!isServiceBusinessMode ? (
+                    <SummaryField
+                      label={isMissedCallRecovery ? "Revenue Risk" : "Estimated Revenue"}
+                      value={row.revenue}
+                      detail={isMissedCallRecovery ? "Estimated revenue at risk" : "Projected recovery value"}
+                    />
+                  ) : null}
+                  {!isServiceBusinessMode && isMissedCallRecovery ? (
                     <SummaryField
                       label="Recovered Value"
                       value={recoveryOutcome === "Pending" ? "Pending" : formatCurrency(recoveredValue)}
@@ -684,11 +842,11 @@ export function CallRecordPage({
                     />
                   ) : null}
                   <SummaryField
-                    label="Issue Identified"
-                    value={issueIdentified}
-                    detail={row.reason}
+                    label={isServiceBusinessMode ? "Phone Number" : "Issue Identified"}
+                    value={isServiceBusinessMode ? row.phone : issueIdentified}
+                    detail={isServiceBusinessMode ? (row.sourceSystem ?? "Inbound call") : row.reason}
                   />
-                  {isMissedCallRecovery ? (
+                  {!isServiceBusinessMode && isMissedCallRecovery ? (
                     <SummaryField
                       label="Booking Created"
                       value={bookingCreatedLabel ?? "Pending"}
@@ -701,27 +859,40 @@ export function CallRecordPage({
                       }
                     />
                   ) : null}
-                  {isMissedCallRecovery ? (
-                    <SummaryField label="Phone Number" value={row.phone} detail={row.sourceSystem ?? "Inbound call"} />
-                  ) : null}
                   <SummaryField
                     label="Timestamp"
                     value={row.date}
-                    detail={isMissedCallRecovery ? "Inbound call received" : `${row.phone} • ${detailState.duration}`}
+                    detail={
+                      isServiceBusinessMode
+                        ? isMissedCallRecovery
+                          ? "Inbound call received"
+                          : `${detailState.duration} • ${row.phone}`
+                        : isMissedCallRecovery
+                          ? "Inbound call received"
+                          : `${row.phone} • ${detailState.duration}`
+                    }
                   />
-                  {isMissedCallRecovery ? (
+                  {isServiceBusinessMode ? (
+                    <SummaryField
+                      label="Notes"
+                      value={row.noteCount && row.noteCount > 0 ? `${row.noteCount}` : "0"}
+                      detail={getServiceNoteSummary(row)}
+                    />
+                  ) : null}
+                  {!isServiceBusinessMode && isMissedCallRecovery ? (
                     <SummaryField label="Call Duration" value={detailState.duration} detail="Recorded interaction length" />
                   ) : null}
-                  {isMissedCallRecovery ? (
+                  {!isServiceBusinessMode && isMissedCallRecovery ? (
                     <SummaryField label="Assigned Owner" value={row.assignedOwner} detail="Current recovery owner" />
                   ) : null}
-                  {isMissedCallRecovery ? (
+                  {!isServiceBusinessMode && isMissedCallRecovery ? (
                     <SummaryField label="Last Action" value={formatMissedCallLastAction(row)} detail="Latest workflow update" />
                   ) : null}
                 </div>
               </div>
 
-              <div className="surface-secondary px-5 py-5">
+              {!isServiceBusinessMode ? (
+                <div className="surface-secondary px-5 py-5">
                 <div className="type-label-text text-[11px]">Recommended next action</div>
                 <div className="type-section-title mt-2 text-[22px] leading-8">
                   {row.nextStep}
@@ -773,13 +944,18 @@ export function CallRecordPage({
                     Escalate
                   </button>
                 </div>
-              </div>
+                </div>
+              ) : null}
             </div>
           </section>
 
           <CardSection
             title="Transcript"
-            description="Readable conversation record for operational review, issue confirmation, and next-step planning."
+            description={
+              isServiceBusinessMode
+                ? "Simple conversation record for the team to review."
+                : "Readable conversation record for operational review, issue confirmation, and next-step planning."
+            }
           >
             {detailState.transcriptPending ? (
               <div className="surface-secondary px-4 py-4">
@@ -826,10 +1002,11 @@ export function CallRecordPage({
             )}
           </CardSection>
 
-          <CardSection
-            title="Analysis Summary"
-            description="Decision-oriented summary of what happened, what it means commercially, and how confident the system is."
-          >
+          {!isServiceBusinessMode ? (
+            <CardSection
+              title="Analysis Summary"
+              description="Decision-oriented summary of what happened, what it means commercially, and how confident the system is."
+            >
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
               <div className="space-y-3">
                 <div className="surface-secondary px-4 py-4">
@@ -905,12 +1082,14 @@ export function CallRecordPage({
                 </div>
               </div>
             </div>
-          </CardSection>
+            </CardSection>
+          ) : null}
 
-          <CardSection
-            title="Recommended Action"
-            description="Operational next step for the team responsible for recovering the opportunity."
-          >
+          {!isServiceBusinessMode ? (
+            <CardSection
+              title="Recommended Action"
+              description="Operational next step for the team responsible for recovering the opportunity."
+            >
             <div className="surface-secondary px-5 py-5">
               <div className="type-label-text text-[11px]">Next best action</div>
               <div className="type-section-title mt-2 text-[22px] leading-8">{row.nextStep}</div>
@@ -933,12 +1112,21 @@ export function CallRecordPage({
                 </button>
               ) : null}
             </div>
-          </CardSection>
+            </CardSection>
+          ) : null}
 
           <CardSection
-            title={isMissedCallRecovery ? "Notes & Timeline" : "Analyst Notes"}
+            title={
+              isServiceBusinessMode
+                ? "Notes"
+                : isMissedCallRecovery
+                  ? "Notes & Timeline"
+                  : "Analyst Notes"
+            }
             description={
-              isMissedCallRecovery
+              isServiceBusinessMode
+                ? "Saved notes for this call."
+                : isMissedCallRecovery
                 ? "Operational notes, follow-up history, and recovery timeline for this missed call."
                 : "Audit trail and operational annotations associated with the interaction."
             }
@@ -976,10 +1164,11 @@ export function CallRecordPage({
         </div>
 
         <aside className="space-y-5 xl:border-l xl:border-[#E5E7EB] xl:pl-5">
-          <CardSection
-            title="Estimated Revenue Impact"
-            description="Projected commercial value at risk for this interaction."
-          >
+          {!isServiceBusinessMode ? (
+            <CardSection
+              title="Estimated Revenue Impact"
+              description="Projected commercial value at risk for this interaction."
+            >
             <div className="rounded-[12px] border border-[#D1D5DB] bg-[#FFFFFF] px-5 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
               <div className="type-label-text text-[12px] text-[#9A782C]">
                 Estimated Revenue Impact
@@ -989,12 +1178,14 @@ export function CallRecordPage({
               </div>
               <p className="type-body-text mt-3 text-[14px]">{detailState.revenueContext}</p>
             </div>
-          </CardSection>
+            </CardSection>
+          ) : null}
 
-          <CardSection
-            title="Detected Issues"
-            description="Operational failure indicators identified within the interaction workflow."
-          >
+          {!isServiceBusinessMode ? (
+            <CardSection
+              title="Detected Issues"
+              description="Operational failure indicators identified within the interaction workflow."
+            >
             <div className="space-y-3">
               {detailState.issues.map((issue) => (
                 <div key={issue.title} className="surface-secondary px-4 py-4">
@@ -1006,13 +1197,16 @@ export function CallRecordPage({
                 </div>
               ))}
             </div>
-          </CardSection>
+            </CardSection>
+          ) : null}
 
           <CardSection
             title="Action Controls"
             description={
               isServiceAnsweredCall
-                ? "Update the answered-call outcome, add notes, and keep the transcript record operationally useful."
+                ? "Set the answered-call outcome and keep notes up to date."
+                : isServiceBusinessMode
+                  ? "Keep this missed call moving with simple status updates and notes."
                 : "Update the case status and keep the recovery workflow moving."
             }
           >
@@ -1042,15 +1236,17 @@ export function CallRecordPage({
                   </div>
                 </div>
               ) : null}
-              <button
-                type="button"
-                onClick={handleSendFollowUp}
-                disabled={row.status === "Resolved" || isSendingFollowUp}
-                className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
+              {!isServiceAnsweredCall ? (
+                <button
+                  type="button"
+                  onClick={handleSendFollowUp}
+                  disabled={row.status === "Resolved" || isSendingFollowUp}
+                  className="button-primary-accent inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#D1D5DB] disabled:bg-[#D1D5DB] disabled:text-white/80"
                 >
-                {isSendingFollowUp ? "Sending Follow-Up..." : "Send Follow-Up"}
-              </button>
-              {isMissedCallRecovery ? (
+                  {isSendingFollowUp ? "Sending Follow-Up..." : isServiceBusinessMode ? "Send SMS" : "Send Follow-Up"}
+                </button>
+              ) : null}
+              {!isServiceBusinessMode && isMissedCallRecovery ? (
                 <button
                   type="button"
                   onClick={handleMarkRecovered}
@@ -1061,19 +1257,34 @@ export function CallRecordPage({
               ) : null}
               <button
                 type="button"
-                onClick={handleResolve}
+                onClick={isServiceBusinessMode && isMissedCallRecovery ? handleMarkCalledBack : handleResolve}
                 className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
               >
-                {isMissedCallRecovery ? "Mark Not Recovered" : "Mark as Resolved"}
+                {isServiceBusinessMode && isMissedCallRecovery
+                  ? "Mark called back"
+                  : isMissedCallRecovery
+                    ? "Mark Not Recovered"
+                    : "Mark as Resolved"}
               </button>
-              <button
-                type="button"
-                onClick={handleEscalate}
-                disabled={row.status === "Resolved"}
-                className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
-              >
-                Escalate
-              </button>
+              {!isServiceAnsweredCall ? (
+                <button
+                  type="button"
+                  onClick={handleResolve}
+                  className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
+                >
+                  {isServiceBusinessMode && isMissedCallRecovery ? "Mark resolved" : isMissedCallRecovery ? "Mark Not Recovered" : "Mark as Resolved"}
+                </button>
+              ) : null}
+              {!isServiceBusinessMode ? (
+                <button
+                  type="button"
+                  onClick={handleEscalate}
+                  disabled={row.status === "Resolved"}
+                  className="button-secondary-ui inline-flex w-full items-center justify-center px-4 py-3 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF]"
+                >
+                  Escalate
+                </button>
+              ) : null}
               {isMissedCallRecovery && currentOwnerLabel ? (
                 <button
                   type="button"

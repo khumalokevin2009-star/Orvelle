@@ -1,5 +1,6 @@
 import type { DateRangeKey } from "@/lib/analysis-window";
 import type { CallTabId, CallTableRow } from "@/data/mock-platform-data";
+import { parseStoredCallNotes } from "@/lib/call-notes";
 
 const dayMs = 24 * 60 * 60 * 1000;
 const defaultMissedCallRecoveryRevenueValue = 240;
@@ -49,6 +50,8 @@ export type DashboardCallRow = CallTableRow & {
   recordingFilename: string | null;
   sourceSystem: string | null;
   transcriptAvailable?: boolean;
+  latestNotePreview?: string | null;
+  noteCount?: number;
   workflowStatusLabel?: "Action Required" | "Follow-Up Sent" | "Escalated" | "Resolved";
   recoveryOutcomeLabel?: "Pending" | "Recovered" | "Not Recovered";
   recoveredValue?: number | null;
@@ -416,9 +419,15 @@ function getConciseAnalystNote(
   primaryIssue: string,
   analysis?: SupabaseAnalysisRecord | null
 ) {
+  const parsedNotes = parseStoredCallNotes(analysis?.analyst_note);
+
   if (analysis?.analysis_status === "completed") {
-    if (analysis.analyst_note?.trim()) {
-      return toConciseSentence(analysis.analyst_note);
+    if (parsedNotes.analystSummary) {
+      return toConciseSentence(parsedNotes.analystSummary);
+    }
+
+    if (parsedNotes.staffNotes[0]) {
+      return toConciseSentence(parsedNotes.staffNotes[0]);
     }
 
     if (analysis.primary_issue?.trim()) {
@@ -513,11 +522,15 @@ function getNoteMeta(
   analysis?: SupabaseAnalysisRecord | null
 ) {
   const directionLabel = record.direction === "outbound" ? "Outbound" : "Inbound";
+  const parsedNotes = parseStoredCallNotes(analysis?.analyst_note);
 
   if (analysis?.analysis_status === "completed") {
     return {
       noteTop: `Intent ${getAnalysisIntentLabel(analysis)} • Outcome ${getAnalysisOutcomeLabel(analysis)}`,
-      noteBottom: analysis.analyst_note?.trim() || getMissedOpportunityLabel(analysis)
+      noteBottom:
+        parsedNotes.staffNotes[0] ??
+        parsedNotes.analystSummary ??
+        getMissedOpportunityLabel(analysis)
     };
   }
 
@@ -565,8 +578,13 @@ function getNoteMeta(
 function getNotes(record: SupabaseCallRecord, analysis?: SupabaseAnalysisRecord | null) {
   const sourceLabel = formatDisplayLabel(record.source_system, "Telephony Platform");
   const recordingLabel = record.recording_filename ?? "recording metadata unavailable";
+  const parsedNotes = parseStoredCallNotes(analysis?.analyst_note);
 
   const notes = [`Imported from ${sourceLabel} using source file ${recordingLabel}.`];
+
+  if (parsedNotes.staffNotes.length > 0) {
+    notes.unshift(...parsedNotes.staffNotes);
+  }
 
   if (analysis?.analysis_status === "completed") {
     notes.unshift(
@@ -575,8 +593,8 @@ function getNotes(record: SupabaseCallRecord, analysis?: SupabaseAnalysisRecord 
       `Missed Opportunity: ${getMissedOpportunityLabel(analysis)}`
     );
 
-    if (analysis.analyst_note?.trim()) {
-      notes.unshift(analysis.analyst_note.trim());
+    if (parsedNotes.analystSummary) {
+      notes.unshift(parsedNotes.analystSummary);
     }
   } else if (!analysis || analysis.analysis_status !== "completed") {
     notes.unshift("Structured analysis is pending for this interaction.");
@@ -617,6 +635,7 @@ export function mapSupabaseCallToDashboardRow(
   const status = getStatusLabel(record.status);
   const category = getCategory(record, status, analysis);
   const currencyCode = record.currency_code ?? "GBP";
+  const parsedNotes = parseStoredCallNotes(analysis?.analyst_note);
   const isMissedCallRecoveryCase = isTwilioMissedInboundRecoveryRecord(record, analysis);
   const revenueValue = getRevenueImpactValue(record, analysis);
   const resolvedRevenueValue =
@@ -659,6 +678,7 @@ export function mapSupabaseCallToDashboardRow(
         ? "Immediate management escalation required. Complete a same-window recovery callback and capture the commercial outcome."
         : "Immediate outbound recovery required. The inbound caller did not reach a connected destination and should receive a callback within the active recovery window.";
   const recoveryNotes = [
+    ...parsedNotes.staffNotes,
     "Inbound Twilio forwarding attempt did not connect to the destination number.",
     `Caller: ${record.caller_phone ?? "Unknown number"}`,
     `Forwarding source: ${formatDisplayLabel(record.source_system, "Twilio")}`
@@ -739,6 +759,8 @@ export function mapSupabaseCallToDashboardRow(
     recordingFilename: record.recording_filename,
     sourceSystem: record.source_system,
     transcriptAvailable: options?.transcriptAvailable ?? false,
+    latestNotePreview: parsedNotes.staffNotes[0] ?? null,
+    noteCount: parsedNotes.staffNotes.length,
     workflowStatusLabel: isMissedCallRecoveryCase ? recoveryWorkflowStatusLabel : undefined,
     recoveryOutcomeLabel: isMissedCallRecoveryCase ? "Pending" : undefined,
     recoveredValue: isMissedCallRecoveryCase ? 0 : undefined,

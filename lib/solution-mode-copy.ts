@@ -4,34 +4,34 @@ export function getSolutionModeCopy(solutionMode: SolutionMode = defaultSolution
   if (solutionMode === "service_business_missed_call_recovery") {
     return {
       shell: {
-        dashboardLabel: "Missed Call Recovery",
-        dashboardMobileLabel: "Recovery",
-        recoveryLabel: "Recovery Queue",
-        recoveryMobileLabel: "Queue",
+        dashboardLabel: "Missed Calls",
+        dashboardMobileLabel: "Missed",
+        recoveryLabel: "Missed Calls",
+        recoveryMobileLabel: "Missed",
         automationsLabel: "Follow-Up Rules",
         settingsLabel: "Business Settings"
       },
       recoveryPage: {
-        title: "Missed Call Recovery",
-        description: "Review missed inbound calls, assess jobs at risk, and trigger follow-up actions.",
+        title: "Missed Calls",
+        description: "Review missed inbound calls and keep callbacks moving.",
         summaryPrimaryLabel: "Missed Calls Today",
-        summaryFollowUpLabel: "Follow-Up Required",
-        summaryRiskLabel: "Jobs At Risk",
-        summaryRiskDetail: "Open missed-call recovery jobs still requiring callback action.",
-        focusedLabel: "Focused recovery case",
-        queueTitle: "Recovery Queue",
+        summaryFollowUpLabel: "Open Follow-Ups",
+        summaryRiskLabel: "Open Cases",
+        summaryRiskDetail: "Missed calls that still need a callback or a final resolution.",
+        focusedLabel: "Selected missed call",
+        queueTitle: "Missed Calls",
         queueDescription:
-          "Operational work surface for triaging missed inbound calls and keeping high-value follow-up on track."
+          "Simple working list for missed inbound calls and callback follow-up."
       },
       callRecord: {
-        missedCallTitle: "Missed Call Recovery Record",
+        missedCallTitle: "Missed Call Record",
         missedCallDescription:
-          "Detailed review of a missed inbound call, the job value attached to it, and the next operational recovery step.",
-        backLabel: "Back to Recovery Queue"
+          "Open the missed call, review the transcript if available, and keep notes and callback status up to date.",
+        backLabel: "Back to Missed Calls"
       },
       dashboard: {
-        serviceFollowUpLabel: "Follow-Up Required",
-        serviceJobsAtRiskLabel: "Jobs At Risk"
+        serviceFollowUpLabel: "Open Follow-Ups",
+        serviceJobsAtRiskLabel: "Open Cases"
       }
     };
   }

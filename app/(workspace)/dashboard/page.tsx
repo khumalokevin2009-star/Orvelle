@@ -24,6 +24,11 @@ import {
   serviceAnsweredCallOutcomeOptions,
   type ServiceAnsweredCallOutcome
 } from "@/lib/service-answered-call-outcomes";
+import {
+  getServiceMissedCallStatus,
+  SERVICE_MISSED_CALL_CALLED_BACK_NOTE,
+  SERVICE_MISSED_CALL_RESOLVED_NOTE
+} from "@/lib/service-missed-call-status";
 import type { BusinessVertical } from "@/lib/solution-mode";
 
 type PrimaryMetricItem = {
@@ -101,18 +106,18 @@ function sortRowsByStartedAtDesc(rows: DashboardCallRow[]) {
   );
 }
 
-function getOperationalStatusClasses(status: string) {
+function getServiceMissedCallStatusClasses(status: string) {
   const normalizedStatus = status.toLowerCase();
 
   if (normalizedStatus === "resolved") {
     return "border border-[#D1E9D7] bg-[#F4FBF5] text-[#256B44]";
   }
 
-  if (normalizedStatus === "follow-up sent" || normalizedStatus === "under review") {
+  if (normalizedStatus === "sms sent") {
     return "border border-[#DCE7F8] bg-[#F7FAFF] text-[#355A93]";
   }
 
-  if (normalizedStatus === "escalated") {
+  if (normalizedStatus === "called back") {
     return "border border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]";
   }
 
@@ -146,6 +151,21 @@ function getBusinessVerticalLabel(businessVertical: BusinessVertical) {
     .split("_")
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ");
+}
+
+function getServiceNoteSummary(row: DashboardCallRow) {
+  const noteCount = row.noteCount ?? 0;
+  const latestNote = row.latestNotePreview?.trim();
+
+  if (noteCount <= 0) {
+    return "No note added";
+  }
+
+  if (latestNote) {
+    return `${noteCount} note${noteCount === 1 ? "" : "s"} • ${latestNote}`;
+  }
+
+  return `${noteCount} note${noteCount === 1 ? "" : "s"} saved`;
 }
 
 function getRowActionStatus(row: CallTableRow) {
@@ -544,13 +564,15 @@ function CallsOverviewTable({
 function ServiceMissedCallsSection({
   rows,
   emptyMessage,
-  onCallBack,
+  onAddNote,
+  onMarkCalledBack,
   onOpenRecord,
   onMarkResolved
 }: {
   rows: DashboardCallRow[];
   emptyMessage: string;
-  onCallBack: (row: DashboardCallRow) => void;
+  onAddNote: (row: DashboardCallRow) => void;
+  onMarkCalledBack: (row: DashboardCallRow) => void;
   onOpenRecord: (row: DashboardCallRow) => void;
   onMarkResolved: (row: DashboardCallRow) => void;
 }) {
@@ -559,14 +581,14 @@ function ServiceMissedCallsSection({
       <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6 sm:py-5.5">
         <h2 className="type-section-title text-[20px] sm:text-[22px]">Missed Calls</h2>
         <p className="type-body-text mt-2 text-[14px] leading-6">
-          Inbound calls that still need a callback, review, or resolution inside the missed-call recovery flow.
+          The missed inbound calls your team still needs to handle today.
         </p>
       </div>
 
       <div className="divide-y divide-[#E5E7EB]">
         {rows.length > 0 ? (
           rows.map((row) => {
-            const statusLabel = row.workflowStatusLabel ?? row.status;
+            const statusLabel = getServiceMissedCallStatus(row);
 
             return (
               <div key={row.id} className="px-5 py-5 sm:px-6">
@@ -575,7 +597,7 @@ function ServiceMissedCallsSection({
                     <div className="flex flex-wrap items-center gap-2.5">
                       <h3 className="type-section-title text-[17px]">{row.caller}</h3>
                       <span
-                        className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getOperationalStatusClasses(
+                        className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getServiceMissedCallStatusClasses(
                           statusLabel
                         )}`}
                       >
@@ -584,22 +606,30 @@ function ServiceMissedCallsSection({
                     </div>
                     <div className="type-muted-text mt-1.5 text-[13px]">{row.phone}</div>
                     <div className="type-body-text mt-2 text-[14px] leading-6">{row.date}</div>
+                    <div className="type-muted-text mt-1.5 text-[13px]">{getServiceNoteSummary(row)}</div>
                   </div>
 
                   <div className="flex flex-wrap gap-2.5">
                     <button
                       type="button"
-                      onClick={() => onCallBack(row)}
+                      onClick={() => onOpenRecord(row)}
                       className="button-primary-accent inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#1D4ED8] hover:bg-[#1D4ED8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
                     >
-                      Call Back
+                      Open
                     </button>
                     <button
                       type="button"
-                      onClick={() => onOpenRecord(row)}
+                      onClick={() => onAddNote(row)}
                       className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
                     >
-                      Open Record
+                      Add note
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onMarkCalledBack(row)}
+                      className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+                    >
+                      Mark called back
                     </button>
                     <button
                       type="button"
@@ -645,7 +675,7 @@ function ServiceAnsweredCallsSection({
       <div className="border-b border-[#E5E7EB] px-5 py-5 sm:px-6 sm:py-5.5">
         <h2 className="type-section-title text-[20px] sm:text-[22px]">Answered Calls</h2>
         <p className="type-body-text mt-2 text-[14px] leading-6">
-          Operational call log for answered inbound conversations, including transcript availability and quick follow-up actions.
+          Answered inbound calls with transcript access, quick notes, and simple outcomes.
         </p>
       </div>
 
@@ -674,10 +704,12 @@ function ServiceAnsweredCallsSection({
                       {formatServiceAnsweredCallOutcomeLabel(row.callOutcome)}
                     </span>
                   </div>
+                  <div className="type-muted-text mt-1.5 text-[13px]">{row.phone}</div>
                   <div className="type-body-text mt-2 text-[14px] leading-6">{row.date}</div>
                   <div className="type-muted-text mt-1.5 text-[13px]">
                     Duration: {formatCallDuration(row.startedAtRaw, row.endedAtRaw)}
                   </div>
+                  <div className="type-muted-text mt-1.5 text-[13px]">{getServiceNoteSummary(row)}</div>
                 </div>
 
                 <div className="flex flex-wrap gap-2.5">
@@ -700,7 +732,7 @@ function ServiceAnsweredCallsSection({
                     onClick={() => onMarkOutcome(row)}
                     className="button-secondary-ui inline-flex min-h-[42px] items-center justify-center px-4 py-2.5 text-[14px] transition hover:border-[#D1D5DB] hover:bg-[#F9FAFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
                   >
-                    Mark Outcome
+                    Set Outcome
                   </button>
                 </div>
 
@@ -855,15 +887,12 @@ export default function HomePage() {
   );
 
   const serviceAwaitingFollowUp = useMemo(
-    () =>
-      recoveryRowsInSelectedRange.filter(
-        (row) => row.workflowStatusLabel === "Action Required" || row.workflowStatusLabel === "Escalated"
-      ).length,
+    () => recoveryRowsInSelectedRange.filter((row) => getServiceMissedCallStatus(row) !== "Resolved").length,
     [recoveryRowsInSelectedRange]
   );
 
   const serviceSmsSent = useMemo(
-    () => recoveryRowsInSelectedRange.filter((row) => row.workflowStatusLabel === "Follow-Up Sent").length,
+    () => recoveryRowsInSelectedRange.filter((row) => getServiceMissedCallStatus(row) === "SMS sent").length,
     [recoveryRowsInSelectedRange]
   );
 
@@ -879,22 +908,22 @@ export default function HomePage() {
           {
             label: "Missed Calls Today",
             value: "—",
-            detail: "Loading today’s inbound calls that require recovery action"
+            detail: "Loading today’s missed inbound calls"
           },
           {
             label: "Open Follow-Ups",
             value: "—",
-            detail: "Loading cases that still need a manual callback or escalation"
+            detail: "Loading calls that still need someone to close the loop"
           },
           {
             label: "SMS Sent",
             value: "—",
-            detail: "Loading automatic and manual missed-call follow-up activity"
+            detail: "Loading missed calls where a text message has already gone out"
           },
           {
             label: "Answered Calls Today",
             value: "—",
-            detail: "Loading answered inbound calls available for transcript review and note capture"
+            detail: "Loading answered calls with transcripts and notes"
           }
         ];
       }
@@ -903,22 +932,22 @@ export default function HomePage() {
         {
           label: "Missed Calls Today",
           value: String(serviceMissedCallsToday),
-          detail: "Inbound calls from today that entered the missed-call recovery workflow"
+          detail: "Missed inbound calls from today"
         },
         {
           label: "Open Follow-Ups",
           value: String(serviceAwaitingFollowUp),
-          detail: "Open cases that still require a callback, escalation, or same-day action"
+          detail: "Missed calls that still need your team to finish the job"
         },
         {
           label: "SMS Sent",
           value: String(serviceSmsSent),
-          detail: "Recovery cases where follow-up has already been initiated by SMS"
+          detail: "Missed calls where the automatic text has already been sent"
         },
         {
           label: "Answered Calls Today",
           value: String(serviceAnsweredCallsToday),
-          detail: "Answered inbound calls captured today and available for transcript review or follow-up notes"
+          detail: "Answered calls ready for transcript review, notes, and outcomes"
         }
       ];
     }
@@ -998,7 +1027,7 @@ export default function HomePage() {
     if (isServiceBusinessMode) {
       if (dataState === "loading") {
         return [
-          `Recovery Window: ${getDateRangeLabel(selectedRange)}`,
+          `View: ${getDateRangeLabel(selectedRange)}`,
           "Open Follow-Ups: Loading...",
           "SMS Sent: Loading...",
           "Answered Calls Today: Loading...",
@@ -1008,7 +1037,7 @@ export default function HomePage() {
 
       if (dataState === "error") {
         return [
-          `Recovery Window: ${getDateRangeLabel(selectedRange)}`,
+          `View: ${getDateRangeLabel(selectedRange)}`,
           "Open Follow-Ups: Unavailable",
           "SMS Sent: Unavailable",
           "Answered Calls Today: Unavailable",
@@ -1017,7 +1046,7 @@ export default function HomePage() {
       }
 
       return [
-        `Recovery Window: ${getDateRangeLabel(selectedRange)}`,
+        `View: ${getDateRangeLabel(selectedRange)}`,
         `Open Follow-Ups: ${serviceAwaitingFollowUp}`,
         `SMS Sent: ${serviceSmsSent}`,
         `Answered Calls Today: ${serviceAnsweredCallsToday}`,
@@ -1097,10 +1126,10 @@ export default function HomePage() {
     }
 
     if (recoveryRowsInSelectedRange.length === 0) {
-      return "No missed inbound calls require recovery action in the selected operating window.";
+      return "No missed calls are waiting for your team in this view.";
     }
 
-    return "No recovery cases match the current operating view.";
+    return "No missed calls match the current view.";
   }, [dataError, dataState, recoveryRowsInSelectedRange.length]);
 
   const answeredCallEmptyMessage = useMemo(() => {
@@ -1198,6 +1227,33 @@ export default function HomePage() {
     );
   }
 
+  async function saveNoteForRow(row: DashboardCallRow, note: string) {
+    const response = await fetch(`/api/calls/${row.id}/notes`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ note })
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          message?: string;
+          latestNote?: string | null;
+          noteCount?: number;
+        }
+      | null;
+
+    if (!response.ok) {
+      throw new Error(payload?.message || "Unable to save the note right now.");
+    }
+
+    return {
+      latestNote: payload?.latestNote ?? note,
+      noteCount: payload?.noteCount
+    };
+  }
+
   function buildResolvedRow(row: DashboardCallRow): DashboardCallRow {
     const updatedAtRaw = new Date().toISOString();
 
@@ -1246,31 +1302,29 @@ export default function HomePage() {
     };
   }
 
-  function handleCallBack(row: DashboardCallRow) {
-    const dialNumber = row.phone.replace(/[^\d+]/g, "");
-
-    if (!dialNumber || dialNumber.toLowerCase().includes("placeholder")) {
-      handleRowOpen(row);
-      setNotice(`Opened ${row.caller}'s record because no callback number is available.`);
-      return;
-    }
-
-    window.location.href = `tel:${dialNumber}`;
-    setNotice(`Opening callback for ${row.caller}.`);
-  }
-
-  function handleAddAnsweredCallNote(row: DashboardCallRow) {
+  async function handleAddServiceCallNote(row: DashboardCallRow) {
     const note = window.prompt(`Enter a note for ${row.caller}`);
 
     if (!note?.trim()) {
       return;
     }
 
-    updateRow(row.id, (currentRow) => ({
-      ...currentRow,
-      notes: currentRow.notes.includes(note.trim()) ? currentRow.notes : [note.trim(), ...currentRow.notes]
-    }));
-    setNotice(`Note saved for ${row.caller}.`);
+    try {
+      const savedNote = await saveNoteForRow(row, note.trim());
+
+      updateRow(row.id, (currentRow) => ({
+        ...currentRow,
+        updatedAtRaw: new Date().toISOString(),
+        latestNotePreview: savedNote.latestNote,
+        noteCount: savedNote.noteCount ?? (currentRow.noteCount ?? 0) + 1,
+        notes: currentRow.notes.includes(savedNote.latestNote)
+          ? currentRow.notes
+          : [savedNote.latestNote, ...currentRow.notes]
+      }));
+      setNotice(`Note saved for ${row.caller}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to save the note right now.");
+    }
   }
 
   function handleMarkAnsweredCallOutcome(row: DashboardCallRow) {
@@ -1290,6 +1344,28 @@ export default function HomePage() {
     }));
     setActiveAnsweredOutcomeRowId(null);
     setNotice(`Outcome recorded for ${row.caller}.`);
+  }
+
+  async function handleMarkCalledBack(row: DashboardCallRow) {
+    try {
+      const savedNote = await saveNoteForRow(row, SERVICE_MISSED_CALL_CALLED_BACK_NOTE);
+
+      updateRow(row.id, (currentRow) => ({
+        ...currentRow,
+        status: currentRow.status === "Resolved" ? currentRow.status : "Under Review",
+        statusTone: currentRow.status === "Resolved" ? currentRow.statusTone : "pending",
+        actionStatus: currentRow.status === "Resolved" ? "No Action Needed" : "Needs Action",
+        updatedAtRaw: new Date().toISOString(),
+        latestNotePreview: savedNote.latestNote,
+        noteCount: savedNote.noteCount ?? (currentRow.noteCount ?? 0) + 1,
+        notes: currentRow.notes.includes(savedNote.latestNote)
+          ? currentRow.notes
+          : [savedNote.latestNote, ...currentRow.notes]
+      }));
+      setNotice(`Marked ${row.caller} as called back.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to update the call status right now.");
+    }
   }
 
   function handleRowOpen(row: DashboardCallRow) {
@@ -1322,8 +1398,29 @@ export default function HomePage() {
       return;
     }
 
-    updateRow(row.id, buildResolvedRow);
-    setNotice(`Case resolved for ${row.caller}.`);
+    if (!isServiceBusinessMode) {
+      updateRow(row.id, buildResolvedRow);
+      setNotice(`Case resolved for ${row.caller}.`);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const savedNote = await saveNoteForRow(row, SERVICE_MISSED_CALL_RESOLVED_NOTE);
+
+        updateRow(row.id, (currentRow) => ({
+          ...buildResolvedRow(currentRow),
+          latestNotePreview: savedNote.latestNote,
+          noteCount: savedNote.noteCount ?? (currentRow.noteCount ?? 0) + 1,
+          notes: currentRow.notes.includes(savedNote.latestNote)
+            ? currentRow.notes
+            : [savedNote.latestNote, ...currentRow.notes]
+        }));
+        setNotice(`Marked ${row.caller} as resolved.`);
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Unable to update the call status right now.");
+      }
+    })();
   }
 
   async function handleCopyLink() {
@@ -1356,11 +1453,11 @@ export default function HomePage() {
       <main>
         <DashboardHeader
           title={
-            isServiceBusinessMode ? "Missed Call Recovery" : "Call Performance / Revenue Recovery"
+            isServiceBusinessMode ? "Missed Calls" : "Call Performance / Revenue Recovery"
           }
           description={
             isServiceBusinessMode
-              ? `Operational view for ${businessDescriptor}, covering missed inbound calls, open follow-ups, SMS activity, and answered-call transcripts without the analysis-heavy performance layer.`
+              ? `Simple operating view for ${businessDescriptor}, covering missed calls, open follow-ups, text messages sent, and answered calls with transcripts.`
               : `Performance view for ${businessDescriptor}, covering conversion failures, revenue exposure, follow-up delays, and the calls that need coaching or recovery attention first.`
           }
           selectedRange={selectedRange}
@@ -1380,13 +1477,14 @@ export default function HomePage() {
             <>
               <PrimaryMetrics
                 items={primaryMetrics}
-                description="Straightforward operating view for missed calls, follow-up progress, SMS activity, and answered-call handling."
+                description="Simple day-to-day view for missed calls, follow-ups, texts sent, and answered-call handling."
               />
 
               <ServiceMissedCallsSection
                 rows={serviceMissedCallRows}
                 emptyMessage={recoveryListEmptyMessage}
-                onCallBack={handleCallBack}
+                onAddNote={handleAddServiceCallNote}
+                onMarkCalledBack={handleMarkCalledBack}
                 onOpenRecord={handleRowOpen}
                 onMarkResolved={handleMarkResolved}
               />
@@ -1396,7 +1494,7 @@ export default function HomePage() {
                 emptyMessage={answeredCallEmptyMessage}
                 activeOutcomeRowId={activeAnsweredOutcomeRowId}
                 onViewTranscript={handleRowOpen}
-                onAddNote={handleAddAnsweredCallNote}
+                onAddNote={handleAddServiceCallNote}
                 onMarkOutcome={handleMarkAnsweredCallOutcome}
                 onSelectOutcome={handleSelectAnsweredCallOutcome}
               />

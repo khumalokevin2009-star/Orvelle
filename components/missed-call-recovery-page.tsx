@@ -9,6 +9,7 @@ import { getSolutionModeCopy } from "@/lib/solution-mode-copy";
 import { defaultSolutionMode, type SolutionMode } from "@/lib/solution-mode";
 import { createClient } from "@/lib/supabase/client";
 import { buildMissedCallRecoveryRows, type DashboardCallRow } from "@/lib/dashboard-calls";
+import { getServiceMissedCallStatus, type ServiceMissedCallStatus } from "@/lib/service-missed-call-status";
 import {
   assignMissedCallWorkflowOwner,
   formatMissedCallLastAction,
@@ -28,11 +29,15 @@ type QueueFilter =
   | "All"
   | "Action Required"
   | "Follow-Up Sent"
+  | "SMS sent"
+  | "No callback yet"
+  | "Called back"
   | "Resolved"
   | "Unassigned"
   | "Assigned to me";
 
 const baseFilterOptions: QueueFilter[] = ["All", "Action Required", "Follow-Up Sent", "Resolved"];
+const serviceFilterOptions: QueueFilter[] = ["All", "No callback yet", "SMS sent", "Called back", "Resolved"];
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-GB", {
@@ -42,8 +47,14 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function getStatusClasses(status: MissedCallWorkflowStatus) {
+function getStatusClasses(status: MissedCallWorkflowStatus | ServiceMissedCallStatus) {
   switch (status) {
+    case "No callback yet":
+      return "border border-[#F2D8D8] bg-[#FFF6F6] text-[#A04C4C]";
+    case "SMS sent":
+      return "border border-[#DBEAFE] bg-[#EFF6FF] text-[#1D4ED8]";
+    case "Called back":
+      return "border border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]";
     case "Action Required":
       return "border border-[#F2D8D8] bg-[#FFF6F6] text-[#A04C4C]";
     case "Follow-Up Sent":
@@ -57,15 +68,20 @@ function getStatusClasses(status: MissedCallWorkflowStatus) {
   }
 }
 
-function matchesFilter(row: DashboardCallRow, filter: QueueFilter, currentOwnerLabel: string | null) {
-  const status = getMissedCallWorkflowStatus(row);
+function matchesFilter(
+  row: DashboardCallRow,
+  filter: QueueFilter,
+  currentOwnerLabel: string | null,
+  isServiceBusinessMode: boolean
+) {
+  const status = isServiceBusinessMode ? getServiceMissedCallStatus(row) : getMissedCallWorkflowStatus(row);
 
   if (filter === "All") {
     return true;
   }
 
   if (filter === "Action Required") {
-    return status === "Action Required" || status === "Escalated";
+    return !isServiceBusinessMode && (status === "Action Required" || status === "Escalated");
   }
 
   if (filter === "Unassigned") {
@@ -110,6 +126,21 @@ function DetailField({
       <div className="type-section-title mt-2 text-[16px] leading-6">{value}</div>
     </div>
   );
+}
+
+function getServiceNoteSummary(row: DashboardCallRow) {
+  const noteCount = row.noteCount ?? 0;
+  const latestNote = row.latestNotePreview?.trim();
+
+  if (noteCount <= 0) {
+    return "No note added";
+  }
+
+  if (latestNote) {
+    return `${noteCount} note${noteCount === 1 ? "" : "s"} • ${latestNote}`;
+  }
+
+  return `${noteCount} note${noteCount === 1 ? "" : "s"} saved`;
 }
 
 export function MissedCallRecoveryPage({
@@ -217,12 +248,14 @@ export function MissedCallRecoveryPage({
   }, []);
 
   const filterOptions: QueueFilter[] = currentOwnerLabel
-    ? [...baseFilterOptions, "Unassigned", "Assigned to me"]
-    : baseFilterOptions;
+    ? [...(isServiceBusinessMode ? serviceFilterOptions : baseFilterOptions), "Unassigned", "Assigned to me"]
+    : isServiceBusinessMode
+      ? serviceFilterOptions
+      : baseFilterOptions;
 
   const filteredRows = useMemo(
-    () => rows.filter((row) => matchesFilter(row, activeFilter, currentOwnerLabel)),
-    [rows, activeFilter, currentOwnerLabel]
+    () => rows.filter((row) => matchesFilter(row, activeFilter, currentOwnerLabel, isServiceBusinessMode)),
+    [rows, activeFilter, currentOwnerLabel, isServiceBusinessMode]
   );
 
   const queueFocusCall = filteredRows.find((row) => row.id === selectedCallId) ?? filteredRows[0] ?? null;
@@ -230,9 +263,13 @@ export function MissedCallRecoveryPage({
   const summary = useMemo(() => {
     const missedCallsToday = rows.length;
     const awaitingFollowUp = rows.filter((row) => {
-      const status = getMissedCallWorkflowStatus(row);
-      return status === "Action Required" || status === "Escalated";
+      const status = isServiceBusinessMode ? getServiceMissedCallStatus(row) : getMissedCallWorkflowStatus(row);
+      return isServiceBusinessMode
+        ? status !== "Resolved"
+        : status === "Action Required" || status === "Escalated";
     }).length;
+    const smsSentCount = rows.filter((row) => getServiceMissedCallStatus(row) === "SMS sent").length;
+    const resolvedCount = rows.filter((row) => getServiceMissedCallStatus(row) === "Resolved").length;
     const revenueAtRisk = rows
       .filter((row) => getMissedCallRecoveryOutcome(row) !== "Recovered")
       .reduce((sum, row) => sum + row.revenueValue, 0);
@@ -243,12 +280,14 @@ export function MissedCallRecoveryPage({
     return {
       missedCallsToday,
       awaitingFollowUp,
+      smsSentCount,
+      resolvedCount,
       revenueAtRisk,
       recoveredCount,
       recoveredValue,
       recoveryRate
     };
-  }, [rows]);
+  }, [isServiceBusinessMode, rows]);
 
   function applyRowStatus(id: string, nextStatus: MissedCallWorkflowStatus) {
     setRows((current) =>
@@ -386,26 +425,38 @@ export function MissedCallRecoveryPage({
           value={isServiceBusinessMode ? String(summary.missedCallsToday) : String(summary.awaitingFollowUp)}
           detail={
             isServiceBusinessMode
-              ? "Inbound calls captured in today’s recovery queue."
+              ? "Missed inbound calls in this view."
               : "Calls with unresolved conversion or recovery failures requiring review."
           }
         />
         <SummaryCard
           label={copy.recoveryPage.summaryFollowUpLabel}
           value={String(summary.awaitingFollowUp)}
-          detail="Missed opportunities still requiring an outreach action."
+          detail={
+            isServiceBusinessMode
+              ? "Missed calls that still need a callback or a final resolution."
+              : "Missed opportunities still requiring an outreach action."
+          }
         />
         <SummaryCard
           label={copy.recoveryPage.summaryRiskLabel}
           value={
-            isServiceBusinessMode ? String(summary.awaitingFollowUp) : formatCurrency(summary.revenueAtRisk)
+            isServiceBusinessMode ? String(summary.smsSentCount) : formatCurrency(summary.revenueAtRisk)
           }
-          detail={copy.recoveryPage.summaryRiskDetail}
+          detail={
+            isServiceBusinessMode
+              ? "Missed calls where an SMS has already been sent."
+              : copy.recoveryPage.summaryRiskDetail
+          }
         />
         <SummaryCard
-          label="Recovery Rate"
-          value={`${summary.recoveryRate}%`}
-          detail={`${formatCurrency(summary.recoveredValue)} recovered across ${summary.recoveredCount} recovered case${summary.recoveredCount === 1 ? "" : "s"}.`}
+          label={isServiceBusinessMode ? "Resolved" : "Recovery Rate"}
+          value={isServiceBusinessMode ? String(summary.resolvedCount) : `${summary.recoveryRate}%`}
+          detail={
+            isServiceBusinessMode
+              ? "Missed calls already closed by the team."
+              : `${formatCurrency(summary.recoveredValue)} recovered across ${summary.recoveredCount} recovered case${summary.recoveredCount === 1 ? "" : "s"}.`
+          }
         />
       </section>
 
@@ -415,15 +466,21 @@ export function MissedCallRecoveryPage({
             <div className="type-label-text text-[11px]">{copy.recoveryPage.focusedLabel}</div>
             <h2 className="type-page-title mt-2 text-[26px] sm:text-[30px]">{queueFocusCall.caller}</h2>
             <p className="type-body-text mt-2 max-w-[760px] text-[14px] leading-6">
-              {queueFocusCall.summary}
+              {isServiceBusinessMode
+                ? "Open the record, add notes, and keep this missed call moving."
+                : queueFocusCall.summary}
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-2.5 text-[13px]">
               <span
                 className={`inline-flex rounded-full px-3 py-1.5 font-semibold tracking-[0.02em] ${getStatusClasses(
-                  getMissedCallWorkflowStatus(queueFocusCall)
+                  isServiceBusinessMode
+                    ? getServiceMissedCallStatus(queueFocusCall)
+                    : getMissedCallWorkflowStatus(queueFocusCall)
                 )}`}
               >
-                {getMissedCallWorkflowStatus(queueFocusCall)}
+                {isServiceBusinessMode
+                  ? getServiceMissedCallStatus(queueFocusCall)
+                  : getMissedCallWorkflowStatus(queueFocusCall)}
               </span>
               <span className="type-body-text">Assigned owner: {queueFocusCall.assignedOwner}</span>
               <span className="type-body-text">Last action: {formatMissedCallLastAction(queueFocusCall)}</span>
@@ -453,8 +510,18 @@ export function MissedCallRecoveryPage({
           <div className="grid gap-3.5 px-5 py-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
             <DetailField label="Timestamp" value={queueFocusCall.date} />
             <DetailField label="Call Duration" value={getMissedCallDuration(queueFocusCall)} />
-            <DetailField label="Revenue Risk" value={formatCurrency(queueFocusCall.revenueValue)} />
-            <DetailField label="Recommended Action" value={queueFocusCall.recommendedAction} />
+            <DetailField
+              label={isServiceBusinessMode ? "Status" : "Revenue Risk"}
+              value={
+                isServiceBusinessMode
+                  ? getServiceMissedCallStatus(queueFocusCall)
+                  : formatCurrency(queueFocusCall.revenueValue)
+              }
+            />
+            <DetailField
+              label={isServiceBusinessMode ? "Notes" : "Recommended Action"}
+              value={isServiceBusinessMode ? getServiceNoteSummary(queueFocusCall) : queueFocusCall.recommendedAction}
+            />
           </div>
         </section>
       ) : null}
@@ -498,17 +565,25 @@ export function MissedCallRecoveryPage({
               <tr className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#4B5563]">
                 <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Caller</th>
                 <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Timestamp</th>
-                <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Call Duration</th>
-                <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Revenue Risk</th>
-                <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Follow-Up Status</th>
-                <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">Recommended Action</th>
+                <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">
+                  {isServiceBusinessMode ? "Status" : "Call Duration"}
+                </th>
+                <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">
+                  {isServiceBusinessMode ? "Notes" : "Revenue Risk"}
+                </th>
+                <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">
+                  {isServiceBusinessMode ? "Owner" : "Follow-Up Status"}
+                </th>
+                <th className="border-b border-[#E5E7EB] px-5 py-3.5 sm:px-6">
+                  {isServiceBusinessMode ? "Next Step" : "Recommended Action"}
+                </th>
                 <th className="border-b border-[#E5E7EB] px-5 py-3.5 text-right sm:px-6">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredRows.length > 0 ? (
                 filteredRows.map((row) => {
-                  const status = getMissedCallWorkflowStatus(row);
+                  const status = isServiceBusinessMode ? getServiceMissedCallStatus(row) : getMissedCallWorkflowStatus(row);
                   const recoveryOutcome = getMissedCallRecoveryOutcome(row);
                   const isResolved = status === "Resolved";
                   const isSelected = row.id === selectedCallId;
@@ -526,7 +601,9 @@ export function MissedCallRecoveryPage({
                         <div className="type-section-title text-[16px] transition group-hover:text-[#111827]">
                           {row.caller}
                         </div>
-                        <div className="type-body-text mt-1 text-[13px] leading-6">{row.reason}</div>
+                        <div className="type-body-text mt-1 text-[13px] leading-6">
+                          {isServiceBusinessMode ? row.phone : row.reason}
+                        </div>
                         <div className="type-muted-text mt-2 text-[12px]">
                           {row.assignedOwner} • Last action {formatMissedCallLastAction(row)}
                         </div>
@@ -535,26 +612,44 @@ export function MissedCallRecoveryPage({
                         <div className="type-section-title text-[14px]">{row.date}</div>
                       </td>
                       <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
-                        <div className="type-section-title text-[14px]">{getMissedCallDuration(row)}</div>
+                        {isServiceBusinessMode ? (
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getStatusClasses(
+                              status
+                            )}`}
+                          >
+                            {status}
+                          </span>
+                        ) : (
+                          <div className="type-section-title text-[14px]">{getMissedCallDuration(row)}</div>
+                        )}
                       </td>
                       <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
-                        <div className="inline-flex rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition group-hover:shadow-[0_6px_16px_rgba(17,24,39,0.08)]">
-                          <div>
-                            <div className="text-[16px] font-bold tracking-[-0.02em] text-[#111827]">
-                              {row.revenueImpact ?? row.revenue}
+                        {isServiceBusinessMode ? (
+                          <div className="type-body-text text-[14px] leading-6">{getServiceNoteSummary(row)}</div>
+                        ) : (
+                          <div className="inline-flex rounded-[12px] border border-[#E5E7EB] bg-[#FFFFFF] px-3.5 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition group-hover:shadow-[0_6px_16px_rgba(17,24,39,0.08)]">
+                            <div>
+                              <div className="text-[16px] font-bold tracking-[-0.02em] text-[#111827]">
+                                {row.revenueImpact ?? row.revenue}
+                              </div>
+                              <div className="type-label-text mt-0.5 text-[10px]">Revenue Risk</div>
                             </div>
-                            <div className="type-label-text mt-0.5 text-[10px]">Revenue Risk</div>
                           </div>
-                        </div>
+                        )}
                       </td>
                       <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getStatusClasses(
-                            status
-                          )}`}
-                        >
-                          {status}
-                        </span>
+                        {isServiceBusinessMode ? (
+                          <div className="type-section-title text-[14px]">{row.assignedOwner}</div>
+                        ) : (
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1.5 text-[12px] font-semibold tracking-[0.02em] ${getStatusClasses(
+                              status
+                            )}`}
+                          >
+                            {status}
+                          </span>
+                        )}
                       </td>
                       <td className="border-b border-[#E5E7EB] px-5 py-5 align-top sm:px-6">
                         <div className="type-section-title text-[15px] leading-6">{row.nextStep}</div>
@@ -574,7 +669,13 @@ export function MissedCallRecoveryPage({
                             disabled={sendingCallId === row.id || isResolved}
                             className="button-secondary-ui inline-flex min-h-[40px] items-center justify-center px-3.5 text-[13px] transition hover:-translate-y-[1px] hover:border-[#D1D5DB] hover:bg-[#F9FAFB] hover:shadow-[0_8px_18px_rgba(17,24,39,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB] disabled:cursor-not-allowed disabled:border-[#E5E7EB] disabled:bg-[#F9FAFB] disabled:text-[#9CA3AF] disabled:shadow-none"
                           >
-                            {sendingCallId === row.id ? "Sending..." : isResolved ? "Closed" : "Send Follow-Up"}
+                            {sendingCallId === row.id
+                              ? "Sending..."
+                              : isResolved
+                                ? "Closed"
+                                : isServiceBusinessMode
+                                  ? "Send SMS"
+                                  : "Send Follow-Up"}
                           </button>
                           <button
                             type="button"
