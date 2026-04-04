@@ -13,11 +13,44 @@ type PasswordSetupSessionSnapshot = {
   refreshToken: string;
 };
 
+function readPasswordSetupErrorDetails(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return {
+      message: error instanceof Error ? error.message : typeof error === "string" ? error : "",
+      code: "",
+      name: "",
+      status: ""
+    };
+  }
+
+  const candidate = error as {
+    message?: unknown;
+    code?: unknown;
+    name?: unknown;
+    status?: unknown;
+  };
+
+  return {
+    message: typeof candidate.message === "string" ? candidate.message : "",
+    code: typeof candidate.code === "string" ? candidate.code : "",
+    name: typeof candidate.name === "string" ? candidate.name : "",
+    status: typeof candidate.status === "number" ? String(candidate.status) : ""
+  };
+}
+
 function getPasswordSetupErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : "";
+  const details = readPasswordSetupErrorDetails(error);
+  const message = details.message;
   const normalized = message.toLowerCase();
+  const code = details.code.toLowerCase();
+  const name = details.name.toLowerCase();
 
   if (
+    code === "session_not_found" ||
+    code === "session_expired" ||
+    code === "refresh_token_not_found" ||
+    code === "refresh_token_already_used" ||
+    name === "authsessionmissingerror" ||
     normalized.includes("auth session missing") ||
     normalized.includes("session not found") ||
     normalized.includes("session expired")
@@ -25,20 +58,30 @@ function getPasswordSetupErrorMessage(error: unknown) {
     return "Your password setup session expired. Please open the latest email link again.";
   }
 
-  if (normalized.includes("reauthentication") || normalized.includes("nonce")) {
-    return "This password setup link needs a fresh verification email. Please request a new password setup link.";
+  if (
+    code === "reauthentication_needed" ||
+    code === "reauth_nonce_missing" ||
+    code === "reauthentication_not_valid" ||
+    normalized.includes("reauthentication") ||
+    normalized.includes("nonce")
+  ) {
+    return "Password updates are currently requiring reauthentication in Supabase. Turn off Secure password change or request a fresh password setup link.";
   }
 
-  if (normalized.includes("same password")) {
+  if (code === "same_password" || normalized.includes("same password")) {
     return "Please choose a new password that you have not used already.";
   }
 
-  if (normalized.includes("weak password")) {
+  if (code === "weak_password" || normalized.includes("weak password")) {
     return "Please choose a stronger password and try again.";
   }
 
   if (normalized.includes("password should be at least")) {
     return "Password must be at least 8 characters.";
+  }
+
+  if (message) {
+    return `Unable to complete password setup: ${message}`;
   }
 
   return "Unable to complete password setup right now. Please try the email link again.";
