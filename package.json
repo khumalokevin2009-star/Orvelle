@@ -7,7 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
-    "invite:client": "node scripts/invite-client-account.mjs"
+    "invite:client": "node scripts/invite-client-account.mjs",
+    "promote:platform-admin": "node scripts/promote-platform-admin.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.0",

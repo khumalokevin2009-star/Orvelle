@@ -19,6 +19,7 @@ import {
   getBusinessAccountByUserId,
   mergeBusinessAccountMetadata,
   readBusinessAccountFromUser,
+  resolveBusinessUserIdFromIdentifier,
   type BusinessAccount,
   upsertBusinessAccountMembership
 } from "@/lib/business-account";
@@ -28,6 +29,7 @@ export type MissedCallRecoverySettings = {
   businessName: string;
   solutionMode: SolutionMode;
   businessVertical: BusinessVertical;
+  twilioNumber: string;
   callRoutingMode: ServiceCallRoutingMode;
   callbackNumber: string;
   defaultCallbackWindow: string;
@@ -55,6 +57,7 @@ export const defaultMissedCallRecoverySettings: MissedCallRecoverySettings = {
   businessName: "Cotrnested Services Ltd.",
   solutionMode: defaultSolutionMode,
   businessVertical: defaultBusinessVertical,
+  twilioNumber: "",
   callRoutingMode: defaultServiceCallRoutingMode,
   callbackNumber: "",
   defaultCallbackWindow: "2 business hours",
@@ -83,6 +86,7 @@ export function normalizeMissedCallRecoverySettings(
     businessName: input?.businessName?.trim() || defaultMissedCallRecoverySettings.businessName,
     solutionMode: normalizeSolutionMode(input?.solutionMode),
     businessVertical: normalizeBusinessVertical(input?.businessVertical),
+    twilioNumber: input?.twilioNumber?.trim() || defaultMissedCallRecoverySettings.twilioNumber,
     callRoutingMode: normalizeServiceCallRoutingMode(input?.callRoutingMode),
     callbackNumber: input?.callbackNumber?.trim() || defaultMissedCallRecoverySettings.callbackNumber,
     defaultCallbackWindow:
@@ -189,6 +193,7 @@ export async function updateMissedCallRecoverySettings({
   });
 
   existingAppMetadata.orvelle_missed_call_recovery_settings = {
+    twilioNumber: nextSettings.twilioNumber,
     callRoutingMode: nextSettings.callRoutingMode,
     callbackNumber: nextSettings.callbackNumber,
     defaultCallbackWindow: nextSettings.defaultCallbackWindow,
@@ -222,6 +227,20 @@ export async function updateMissedCallRecoverySettings({
   });
 
   return nextSettings;
+}
+
+export async function updateMissedCallRecoverySettingsByBusinessId({
+  businessId,
+  settings
+}: {
+  businessId: string;
+  settings: MissedCallRecoverySettings;
+}) {
+  const settingsUserId = await resolveBusinessUserIdFromIdentifier(businessId);
+  return updateMissedCallRecoverySettings({
+    userId: settingsUserId,
+    settings
+  });
 }
 
 export function renderMissedCallRecoverySmsTemplate({

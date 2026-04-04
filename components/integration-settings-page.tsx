@@ -137,6 +137,7 @@ function formatMonitoringLabel(type: "call_ingested" | "ingestion_failed" | "ana
 export function IntegrationSettingsPage({
   accountIdentifier,
   webhookUrl,
+  twilioNumber,
   callRoutingMode,
   answerNumber,
   status,
@@ -270,6 +271,10 @@ export function IntegrationSettingsPage({
                 onCopy={() => handleCopy(accountIdentifier, "account")}
                 copyLabel="Copy ID"
                 copied={copiedField === "account"}
+              />
+              <ValueField
+                label="Assigned Twilio Number"
+                value={twilioNumber || "Not configured yet"}
               />
               <ValueField
                 label="Current Call Routing Mode"

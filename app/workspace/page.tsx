@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getAuthenticatedUser } from "@/lib/auth/session";
+import { isPlatformAdminUser } from "@/lib/platform-admin";
 
 export default async function WorkspaceEntryPage() {
   const user = await getAuthenticatedUser();
@@ -8,5 +9,5 @@ export default async function WorkspaceEntryPage() {
     redirect("/login");
   }
 
-  redirect("/dashboard");
+  redirect(isPlatformAdminUser(user) ? "/admin" : "/dashboard");
 }

@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { User } from "@supabase/supabase-js";
-import { ensureBusinessAccountForUser } from "@/lib/business-account";
+import { ensureBusinessAccountForUser, getCurrentBusinessAccount } from "@/lib/business-account";
 import {
   ensureProviderConnectionState,
   readProviderConnectionState,
@@ -20,6 +20,7 @@ import type { ServiceCallRoutingMode } from "@/lib/service-call-routing-mode";
 export type TwilioIntegrationSnapshot = {
   accountIdentifier: string;
   webhookUrl: string;
+  twilioNumber: string | null;
   callRoutingMode: ServiceCallRoutingMode;
   answerNumber: string | null;
   status: IntegrationStatus;
@@ -58,7 +59,7 @@ export async function getTwilioIntegrationSnapshot({
   user: User;
   origin: string;
 }): Promise<TwilioIntegrationSnapshot> {
-  const businessAccount = await ensureBusinessAccountForUser(user);
+  const businessAccount = (await getCurrentBusinessAccount()) ?? (await ensureBusinessAccountForUser(user));
   const accountIdentifier = businessAccount.businessId;
   const missedCallRecoverySettings = await getMissedCallRecoverySettings(accountIdentifier).catch(() => null);
   const endpointReady = Boolean(
@@ -119,6 +120,7 @@ export async function getTwilioIntegrationSnapshot({
   return {
     accountIdentifier,
     webhookUrl: `${origin}/api/webhooks/twilio?account=${encodeURIComponent(accountIdentifier)}`,
+    twilioNumber: missedCallRecoverySettings?.twilioNumber?.trim() || null,
     callRoutingMode:
       missedCallRecoverySettings?.callRoutingMode ?? "missed_call_only_forwarding",
     answerNumber: missedCallRecoverySettings?.callbackNumber?.trim() || null,

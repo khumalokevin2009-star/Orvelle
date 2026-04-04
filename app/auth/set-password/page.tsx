@@ -10,7 +10,7 @@ export default function SetPasswordPage() {
       description="Finish setting up your Orvelle access by choosing a password for your invited account."
       submitLabel="Set Password"
       savingLabel="Saving Password..."
-      successRedirect="/dashboard"
+      successRedirect="/workspace"
     />
   );
 }

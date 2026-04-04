@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth/session";
-import { ensureBusinessAccountForUser } from "@/lib/business-account";
+import {
+  ensureBusinessAccountForUser,
+  getCurrentBusinessAccount
+} from "@/lib/business-account";
 import { ensureProviderConnectionState } from "@/lib/integrations/connection-status";
 import { deriveOriginFromHeaders } from "@/lib/integrations/twilio-settings";
 import { twilioWebhookHandler } from "@/lib/webhooks/providers/twilio-handler";
@@ -33,7 +36,7 @@ export async function POST(request: Request) {
   }
 
   const origin = deriveOriginFromHeaders(request.headers);
-  const businessAccount = await ensureBusinessAccountForUser(user);
+  const businessAccount = (await getCurrentBusinessAccount()) ?? (await ensureBusinessAccountForUser(user));
   const accountIdentifier = businessAccount.businessId;
   const webhookUrl = `${origin}/api/webhooks/twilio?account=${encodeURIComponent(accountIdentifier)}`;
   const rawBody = new URLSearchParams({

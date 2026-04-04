@@ -2,6 +2,7 @@ import "server-only";
 
 import type { User } from "@supabase/supabase-js";
 import { getAuthenticatedUser } from "@/lib/auth/session";
+import { getPlatformAdminBusinessOverride } from "@/lib/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import {
@@ -21,6 +22,7 @@ type BusinessAccountMetadataRecord = {
   businessName?: string | null;
   solutionMode?: string | null;
   businessVertical?: string | null;
+  role?: string | null;
   updatedAt?: string | null;
 };
 
@@ -45,6 +47,7 @@ export type BusinessAccount = {
   businessName: string;
   solutionMode: SolutionMode;
   businessVertical: BusinessVertical;
+  role: string | null;
   updatedAt: string | null;
 };
 
@@ -114,7 +117,20 @@ function readBusinessAccountFromMembershipRow(row: BusinessMembershipRow): Busin
     businessName: normalizeBusinessName(row.business_name),
     solutionMode: normalizeSolutionMode(row.solution_mode),
     businessVertical: normalizeBusinessVertical(row.business_vertical),
+    role: null,
     updatedAt: row.updated_at ?? null
+  };
+}
+
+function mergeMembershipAccountRole(
+  user: { id: string; app_metadata?: unknown },
+  account: BusinessAccount
+): BusinessAccount {
+  const metadataRole = readBusinessAccountFromUser(user).role;
+
+  return {
+    ...account,
+    role: metadataRole ?? account.role
   };
 }
 
@@ -126,7 +142,8 @@ function businessAccountNeedsMetadataSync(user: { id: string; app_metadata?: unk
     (businessRecord?.businessId?.trim() || user.id) !== account.businessId ||
     normalizeBusinessName(businessRecord?.businessName) !== account.businessName ||
     normalizeSolutionMode(businessRecord?.solutionMode) !== account.solutionMode ||
-    normalizeBusinessVertical(businessRecord?.businessVertical) !== account.businessVertical
+    normalizeBusinessVertical(businessRecord?.businessVertical) !== account.businessVertical ||
+    (businessRecord?.role?.trim() || null) !== account.role
   );
 }
 
@@ -144,7 +161,8 @@ async function syncBusinessAccountMetadata(
     businessId: account.businessId,
     businessName: account.businessName,
     solutionMode: account.solutionMode,
-    businessVertical: account.businessVertical
+    businessVertical: account.businessVertical,
+    role: account.role
   });
 
   const supabase = createAdminClient();
@@ -234,6 +252,7 @@ export function readBusinessAccountFromUser(user: {
     businessVertical: normalizeBusinessVertical(
       businessRecord?.businessVertical ?? settingsRecord?.businessVertical
     ),
+    role: businessRecord?.role?.trim() || null,
     updatedAt: businessRecord?.updatedAt ?? null
   };
 }
@@ -244,7 +263,8 @@ export function mergeBusinessAccountMetadata({
   businessId,
   businessName,
   solutionMode,
-  businessVertical
+  businessVertical,
+  role
 }: {
   existingAppMetadata: Record<string, unknown>;
   userId: string;
@@ -252,6 +272,7 @@ export function mergeBusinessAccountMetadata({
   businessName?: string | null;
   solutionMode?: SolutionMode | null;
   businessVertical?: BusinessVertical | null;
+  role?: string | null;
 }) {
   const currentAccount = readBusinessAccountFromUser({
     id: userId,
@@ -267,6 +288,7 @@ export function mergeBusinessAccountMetadata({
       businessVertical: normalizeBusinessVertical(
         businessVertical ?? currentAccount.businessVertical ?? defaultBusinessVertical
       ),
+      role: role?.trim() || currentAccount.role || null,
       updatedAt: new Date().toISOString()
     }
   };
@@ -302,13 +324,15 @@ export async function upsertBusinessAccountMembership({
   businessId,
   businessName,
   solutionMode,
-  businessVertical
+  businessVertical,
+  role
 }: {
   userId: string;
   businessId?: string | null;
   businessName?: string | null;
   solutionMode?: SolutionMode | null;
   businessVertical?: BusinessVertical | null;
+  role?: string | null;
 }) {
   const currentAccount = (await getBusinessAccountByUserId(userId)) ?? {
     userId,
@@ -316,6 +340,7 @@ export async function upsertBusinessAccountMembership({
     businessName: normalizeBusinessName(businessName),
     solutionMode: normalizeSolutionMode(solutionMode),
     businessVertical: normalizeBusinessVertical(businessVertical),
+    role: role?.trim() || null,
     updatedAt: null
   };
 
@@ -325,6 +350,7 @@ export async function upsertBusinessAccountMembership({
     businessName: normalizeBusinessName(businessName ?? currentAccount.businessName),
     solutionMode: normalizeSolutionMode(solutionMode ?? currentAccount.solutionMode),
     businessVertical: normalizeBusinessVertical(businessVertical ?? currentAccount.businessVertical),
+    role: role?.trim() || currentAccount.role || null,
     updatedAt: currentAccount.updatedAt
   };
 
@@ -362,15 +388,17 @@ export async function ensureBusinessAccountForUser(user: User) {
   const membershipAccount = await getBusinessAccountByUserId(user.id);
 
   if (membershipAccount) {
-    if (businessAccountNeedsMetadataSync(user, membershipAccount)) {
+    const resolvedMembershipAccount = mergeMembershipAccountRole(user, membershipAccount);
+
+    if (businessAccountNeedsMetadataSync(user, resolvedMembershipAccount)) {
       console.info("[business-account] Syncing auth metadata from business membership record.", {
         userId: user.id,
-        businessId: membershipAccount.businessId
+        businessId: resolvedMembershipAccount.businessId
       });
-      await syncBusinessAccountMetadata(user, membershipAccount);
+      await syncBusinessAccountMetadata(user, resolvedMembershipAccount);
     }
 
-    return membershipAccount;
+    return resolvedMembershipAccount;
   }
 
   const resolvedAccount = readBusinessAccountFromUser(user);
@@ -413,10 +441,25 @@ export async function getCurrentBusinessAccount() {
     return null;
   }
 
+  const adminBusinessOverride = await getPlatformAdminBusinessOverride(user);
+
+  if (adminBusinessOverride) {
+    const overriddenAccount = await resolveBusinessAccountByIdentifier(adminBusinessOverride);
+
+    if (overriddenAccount) {
+      return overriddenAccount;
+    }
+
+    console.warn("[business-account] Platform admin business override could not be resolved.", {
+      userId: user.id,
+      businessOverride: adminBusinessOverride
+    });
+  }
+
   const membershipRow = await getCurrentBusinessMembershipRow(user.id);
 
   if (membershipRow) {
-    const membershipAccount = readBusinessAccountFromMembershipRow(membershipRow);
+    const membershipAccount = mergeMembershipAccountRole(user, readBusinessAccountFromMembershipRow(membershipRow));
 
     if (businessAccountNeedsMetadataSync(user, membershipAccount)) {
       await syncBusinessAccountMetadata(user, membershipAccount);

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth/session";
+import { getCurrentBusinessAccount } from "@/lib/business-account";
 import {
   getMissedCallRecoverySettings,
   normalizeMissedCallRecoverySettings,
-  updateMissedCallRecoverySettings,
+  updateMissedCallRecoverySettingsByBusinessId,
   validateMissedCallRecoverySettings
 } from "@/lib/missed-call-recovery-settings";
 import type { ServiceCallRoutingMode } from "@/lib/service-call-routing-mode";
@@ -22,7 +23,18 @@ export async function GET() {
   }
 
   try {
-    const settings = await getMissedCallRecoverySettings(user.id);
+    const businessAccount = await getCurrentBusinessAccount();
+
+    if (!businessAccount) {
+      return NextResponse.json(
+        {
+          message: "Business context is required."
+        },
+        { status: 403 }
+      );
+    }
+
+    const settings = await getMissedCallRecoverySettings(businessAccount.businessId);
 
     return NextResponse.json({
       settings
@@ -52,12 +64,24 @@ export async function POST(request: Request) {
     );
   }
 
+  const businessAccount = await getCurrentBusinessAccount();
+
+  if (!businessAccount) {
+    return NextResponse.json(
+      {
+        message: "Business context is required."
+      },
+      { status: 403 }
+    );
+  }
+
   const payload = (await request.json().catch(() => null)) as
     | {
         settings?: Partial<{
           businessName: string;
           solutionMode: SolutionMode;
           businessVertical: BusinessVertical;
+          twilioNumber: string;
           callRoutingMode: ServiceCallRoutingMode;
           callbackNumber: string;
           defaultCallbackWindow: string;
@@ -91,8 +115,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const settings = await updateMissedCallRecoverySettings({
-      userId: user.id,
+    const settings = await updateMissedCallRecoverySettingsByBusinessId({
+      businessId: businessAccount.businessId,
       settings: nextSettings
     });
 

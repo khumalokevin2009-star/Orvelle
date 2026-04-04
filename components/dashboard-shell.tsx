@@ -28,6 +28,7 @@ type DashboardShellProps = {
   businessName?: string;
   solutionMode?: SolutionMode;
   businessVertical?: BusinessVertical;
+  adminInspectionActive?: boolean;
 };
 
 export function DashboardShell({
@@ -35,7 +36,8 @@ export function DashboardShell({
   businessId = "",
   businessName = "Business Account",
   solutionMode = defaultSolutionMode,
-  businessVertical = defaultBusinessVertical
+  businessVertical = defaultBusinessVertical,
+  adminInspectionActive = false
 }: DashboardShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -176,6 +178,22 @@ export function DashboardShell({
         </aside>
 
         <div className="min-w-0 flex-1 px-4 py-5 pb-24 sm:px-6 sm:py-7 sm:pb-24 lg:px-8 lg:py-8 lg:pb-8 xl:px-12 xl:py-9">
+          {adminInspectionActive ? (
+            <div className="mb-5 flex flex-col gap-3 rounded-[16px] border border-[#DBEAFE] bg-[#EFF6FF] px-4 py-4 text-[#1D4ED8] sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="type-label-text text-[12px] text-[#1D4ED8]">Platform Admin Inspection</div>
+                <p className="mt-2 text-[14px] leading-6 text-[#1E40AF]">
+                  You are currently inspecting the {businessName} workspace with platform-admin access.
+                </p>
+              </div>
+              <Link
+                href="/admin/stop-inspecting"
+                className="button-secondary-ui inline-flex h-11 items-center justify-center px-4 text-[14px] no-underline transition hover:border-[#BFDBFE] hover:bg-[#FFFFFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+              >
+                Return to admin
+              </Link>
+            </div>
+          ) : null}
           <SolutionModeProvider
             businessId={businessId}
             businessName={businessName}

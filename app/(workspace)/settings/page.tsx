@@ -85,6 +85,7 @@ export default function SettingsPage() {
     solutionMode: defaultSolutionMode as SolutionMode,
     businessVertical: defaultBusinessVertical as BusinessVertical,
     contactEmail: "ops@cotrnested.com",
+    twilioNumber: "",
     callbackNumber: "",
     businessHours: "Mon-Fri, 08:00-18:00"
   });
@@ -176,6 +177,7 @@ export default function SettingsPage() {
                 businessName?: string;
                 solutionMode?: SolutionMode;
                 businessVertical?: BusinessVertical;
+                twilioNumber?: string;
                 callRoutingMode?: ServiceCallRoutingMode;
                 callbackNumber?: string;
                 defaultCallbackWindow?: string;
@@ -200,6 +202,7 @@ export default function SettingsPage() {
           businessName: payload.settings?.businessName || current.businessName,
           solutionMode: payload.settings?.solutionMode || current.solutionMode,
           businessVertical: payload.settings?.businessVertical || current.businessVertical,
+          twilioNumber: payload.settings?.twilioNumber || "",
           callbackNumber: payload.settings?.callbackNumber || "",
           businessHours: payload.settings?.businessHours || current.businessHours
         }));
@@ -299,6 +302,7 @@ export default function SettingsPage() {
             businessName: businessProfile.businessName,
             solutionMode: businessProfile.solutionMode,
             businessVertical: businessProfile.businessVertical,
+            twilioNumber: businessProfile.twilioNumber,
             callRoutingMode: missedCallRecovery.callRoutingMode,
             callbackNumber: businessProfile.callbackNumber,
             defaultCallbackWindow: missedCallRecovery.defaultCallbackWindow,
@@ -336,8 +340,8 @@ export default function SettingsPage() {
   return (
     <main>
       <WorkspacePageHeader
-        title="Platform Settings"
-        description="Manage business profile details, notification behavior, analysis defaults, and user access across the platform."
+        title="Business Settings"
+        description="Manage business profile details, call routing, follow-up settings, and operational defaults for the current business."
         actions={
           <Link
             href="/settings/integrations"
@@ -451,6 +455,20 @@ export default function SettingsPage() {
                       </option>
                     ))}
                   </select>
+                </Field>
+                <Field label="Twilio Number">
+                  <input
+                    type="tel"
+                    value={businessProfile.twilioNumber}
+                    onChange={(event) =>
+                      setBusinessProfile((current) => ({
+                        ...current,
+                        twilioNumber: event.target.value
+                      }))
+                    }
+                    placeholder="+44 20 7946 0123"
+                    className={inputClassName}
+                  />
                 </Field>
                 <Field label="Answer / Callback Number">
                   <input
